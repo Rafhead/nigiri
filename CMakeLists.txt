@@ -42,7 +42,7 @@ endif()
 
 # --- LIB ---
 file(GLOB_RECURSE nigiri-files src/*.cc)
-add_library(nigiri ${nigiri-files})
+add_library(nigiri ${nigiri-files} include/nigiri/tripbased/fws_multimap.h include/nigiri/tripbased/vector.h include/nigiri/tripbased/data.h)
 target_include_directories(nigiri PUBLIC include)
 target_link_libraries(nigiri PUBLIC cista geo utl fmt date miniz date-tz wyhash unordered_dense)
 target_compile_features(nigiri PUBLIC cxx_std_20)

@@ -6,9 +6,6 @@
 #include "nigiri/tripbased/transfer.h"
 #include "nigiri/types.h"
 
-#ifndef NIGIRI_TRIPBASED_H
-#define NIGIRI_TRIPBASED_H
-
 namespace nigiri {
 struct timetable;
 }
@@ -25,11 +22,9 @@ private:
 
   timetable& tt_;
   routing::query q_;
-  nvec<std::uint32_t, transfer, 3> transfers_ =
-      nvec<std::uint32_t, transfer, 3>();
-  fws_multimap<std::uint32_t> transfer_indexes_ = fws_multimap<std::uint32_t>();
+  nvec<std::uint32_t, transfer, 2> transfers_ =
+      nvec<std::uint32_t, transfer, 2>();
+  fws_multimap<std::uint32_t> transfer_idxs_ = fws_multimap<std::uint32_t>();
 };
 
 }  // namespace nigiri::tripbased
-
-#endif  // NIGIRI_TRIPBASED_H
