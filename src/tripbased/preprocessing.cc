@@ -35,20 +35,27 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
     for (auto transport_from_idx :
          tt.route_transport_ranges_[route_idx_t{route_from_idx_}]) {
       // To store to bitsets in timetable for times on stations
-      vecvec<location_idx_t,
-             std::pair<minutes_after_midnight_t, bitfield_idx_t>>
-          arrival_times_;
-      vecvec<location_idx_t,
-             std::pair<minutes_after_midnight_t, bitfield_idx_t>>
-          ea_change_times_;
-
+      vecvec<location_idx_t, std::pair<minutes_after_midnight_t, bitfield>>
+          arrival_times;
+      vecvec<location_idx_t, std::pair<minutes_after_midnight_t, bitfield>>
+          ea_change_times;
+      vector<vector<transfer>> trip_transfers;
       // Iterate through all stops of this route in opposite direction
+      // skipping the first station
       auto const location_from_seq =
           tt.route_location_seq_[route_idx_t{route_from_idx_}];
-      for (auto stop_from_idx = location_from_seq.size() - 2U;
+      for (auto stop_from_idx = location_from_seq.size() - 1U;
            stop_from_idx != 0U; --stop_from_idx) {
+        // To store transfers for a trip and for his unique stop
+        vector<transfer> transfers_from = vector<transfer>();
         auto const location_from_idx = location_from_seq[stop_from_idx];
-        update_time();
+        transport_from_mam =
+            tt.event_mam(route_idx_t{route_from_idx_}, transport_from_idx,
+                         location_from_idx, event_type::kArr);
+        transport_from_bf_idx = tt.transport_traffic_days_[transport_from_idx];
+        update_time(arrival_times, location_idx_t{location_from_idx},
+                    transport_from_mam % 1440,
+                    tt.bitfields_[transport_from_bf_idx], false);
         // Iterate through all stops that are reachable by footpath
         // +1 for the station itself
         // Station itself is not included in footpaths from them
@@ -70,17 +77,18 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
           }
           day_change = false;
           // Get mam for the trip from and add footpath
-          transport_from_mam =
-              tt.event_mam(route_idx_t{route_from_idx_}, transport_from_idx,
-                           location_from_idx, event_type::kArr);
           auto const mam_at_stop_from = transport_from_mam + footpath_duration;
           // Check if footpath makes day change
           if ((transport_from_mam.count() / 1440) !=
               ((mam_at_stop_from).count()) / 1440) {
             day_change = true;
           }
-          update_time();
-          update_time();
+          update_time(arrival_times, location_idx_t{location_to_idx},
+                      mam_at_stop_from % 1440,
+                      tt.bitfields_[transport_from_bf_idx], day_change);
+          update_time(ea_change_times, location_idx_t{location_to_idx},
+                      mam_at_stop_from % 1440,
+                      tt.bitfields_[transport_from_bf_idx], day_change);
           // Iterate through all routes on current stop reachable by
           // footpath
           for (auto route_to_idx : tt.location_routes_[location_to_idx]) {
@@ -100,8 +108,6 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
             // Set the current trips bitfields to its actual value and shift
             // TODO: bitfields must be set by this way?
             // b[t]' <-- ...
-            transport_from_bf_idx =
-                tt.transport_traffic_days_[transport_from_idx];
             transport_from_bf.set(
                 tt.bitfields_[transport_from_bf_idx].to_string());
             auto transport_from_bf_cpy = bitset<512>(transport_from_bf);
@@ -138,6 +144,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
             // original for comparison
             auto ea_time = ea_time_it;
             //  while...
+            // TODO check ea_time != ...
             while (transport_from_bf_cpy.any() && ea_time != ea_time_it - 1) {
               // transport to offset
               auto transport_to_offset = static_cast<std::size_t>(
@@ -185,14 +192,17 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                 auto const route_to_n_transports = static_cast<unsigned>(
                     tt.route_transport_ranges_[route_to_idx].size());
                 auto const location_to_next_mam =
-                    (ea_time - 2 * route_to_n_transports)->count();
+                    tt.event_mam(route_to_idx, transport_to_idx,
+                                 stop_to_idx + 1, event_type::kDep);
+                //(ea_time - 2 * route_to_n_transports)->count();
                 if ((transport_from_prev_mam + change_time).count() % 1440 >
-                    location_to_next_mam % 1440) {
+                    location_to_next_mam.count() % 1440) {
                   next_c = true;
                 }
                 //[b_u]'' <-- ...
                 auto transport_to_bf_cc = transport_to_bf;
-                transport_to_bf_cc.operator>>=(location_to_next_mam / 1440);
+                transport_to_bf_cc.operator>>=(location_to_next_mam.count() /
+                                               1440);
                 transport_to_bf_cc.operator<<=(next_c);
                 //[b_tr]'
                 auto transfer_bf_cpy =
@@ -206,10 +216,55 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               if (!transfer_bf.any()) {
                 continue;
               }
+              // for each stop p_k^u ...
+              for (auto next_locs = location_to_pos_it;
+                   next_locs < route_to_stop_seq.end(); ++next_locs) {
+                // TODO: complete method call
+                keep.operator|=(tt.bitfields_[update_time(
+                    arrival_times, location_idx_t{*next_locs},
+                    *(ea_time + (next_locs - location_to_pos_it)) % 1440,
+                    transfer_bf, day_change)]);
+                // Iter through footpaths
+                auto const next_locs_foot =
+                    tt.locations_.footpaths_out_[location_idx_t{*next_locs}];
+                for (size_t next_locs_to_idx = 0;
+                     next_locs_to_idx != next_locs_foot.size();
+                     ++next_locs_to_idx) {
+                  auto const arr_to_time =
+                      (*ea_time +
+                       next_locs_foot.at(next_locs_to_idx).duration_) %
+                      1440;
+                  // TODO: complete method call
+                  keep.operator|=(tt.bitfields_[update_time(
+                      arrival_times,
+                      next_locs_foot.at(next_locs_to_idx).target_, arr_to_time,
+                      transfer_bf, day_change)]);
+                  keep.operator|=(tt.bitfields_[update_time(
+                      ea_change_times,
+                      next_locs_foot.at(next_locs_to_idx).target_, arr_to_time,
+                      transfer_bf, day_change)]);
+                }
+              }
+              if (keep.any()) {
+                transport_from_bf_cpy.operator&=(keep.operator~());
+                auto const new_transfer =
+                    transfer(transport_to_idx, stop_from_idx,
+                             get_bitfield_idx(keep), day_change);
+                transfers_from.push_back(new_transfer);
+              }
+              // TODO: check correct assignment ea_time
+              if (ea_time == end(ev_time_range) && !day_change) {
+                day_change = true;
+                ea_time = location_to_event_times.begin();
+                continue;
+              }
+              ea_time++;
             }
           }
         }
+        trip_transfers.push_back(transfers_from);
       }
+      transfers.emplace_back(trip_transfers);
     }
   }
 

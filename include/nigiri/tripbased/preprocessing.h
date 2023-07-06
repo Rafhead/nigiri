@@ -12,6 +12,12 @@ namespace nigiri::tripbased {
 nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt);
 
 // Help methods
-bool update_time();
+bitfield_idx_t update_time(
+    vecvec<location_idx_t, std::pair<minutes_after_midnight_t, bitfield>>&
+        times,
+    location_idx_t l_idx,
+    minutes_after_midnight_t time_on_l,
+    bitfield bf,
+    bool day_change);
 
 }  // namespace nigiri::tripbased
