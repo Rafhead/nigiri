@@ -219,6 +219,14 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               // for each stop p_k^u ...
               for (auto next_locs = location_to_pos_it;
                    next_locs < route_to_stop_seq.end(); ++next_locs) {
+                // TODO: adapt day_change for the stations after transfer
+                // 24 hrs max journey duration check
+                if (day_change &&
+                    ((ea_time + (next_locs - location_to_pos_it))->count() %
+                     1440) - (transport_from_mam.count() % 1440) >
+                        0) {
+                  break;
+                }
                 // TODO: complete method call
                 keep.operator|=(tt.bitfields_[update_time(
                     arrival_times, location_idx_t{*next_locs},
