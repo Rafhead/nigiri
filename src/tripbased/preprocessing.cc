@@ -12,7 +12,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
   location_idx_t location_to_idx;
   duration_t footpath_duration;
   minutes_after_midnight_t transport_from_mam;
-  minutes_after_midnight_t transport_to_mam;
+  // minutes_after_midnight_t transport_to_mam;
 
   auto bitfields = hash_map<bitfield, bitfield_idx_t>{};
   for (auto const [i, bf] : utl::enumerate(tt.bitfields_)) {
@@ -111,8 +111,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
             transport_from_bf.set(
                 tt.bitfields_[transport_from_bf_idx].to_string());
             auto transport_from_bf_cpy = bitset<512>(transport_from_bf);
-            transport_from_bf_cpy.operator>>=(
-                (transport_from_mam.count() / 1440));
+            transport_from_bf_cpy >>= (transport_from_mam.count() / 1440);
             day_change = false;
             // Find the earliest trip for line L
             // Get a look on event times for current route
@@ -163,11 +162,11 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               auto transport_to_bf_cpy =
                   bitset<512>(transport_to_bf.to_string());
               // [b_u] >>> ...
-              transport_to_bf_cpy.operator>>(event_on_stop_to.count() / 1440);
-              transport_to_bf_cpy.operator<<(day_change);
+              transport_to_bf_cpy >>= event_on_stop_to.count() / 1440;
+              transport_to_bf_cpy <<= day_change;
               // [b_tr] <-- ...
               auto transfer_bf = bitset<512>(transport_from_bf_cpy.to_string());
-              transfer_bf.operator&=(transport_to_bf_cpy);
+              transfer_bf &= transport_to_bf_cpy;
               auto keep = bitset<512>();
               // Checking for U-turn as well
               if (location_from_idx == location_to_idx.v_ &&
@@ -179,8 +178,8 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                 auto const day_diff = (transport_from_mam / 1440) -
                                       (transport_from_prev_mam / 1440);
                 auto const transport_from_bf_cc_m_idx =
-                    get_bitfield_idx(transport_from_bf.operator>>(
-                        (transport_from_prev_mam / 1440).count()));
+                    get_bitfield_idx(transport_from_bf >>
+                                     (transport_from_prev_mam / 1440).count());
                 auto next_c = false;
                 auto const change_time =
                     tt.locations_
@@ -189,8 +188,8 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                     transport_from_prev_mam.count() / 1440) {
                   next_c = true;
                 }
-                auto const route_to_n_transports = static_cast<unsigned>(
-                    tt.route_transport_ranges_[route_to_idx].size());
+                // auto const route_to_n_transports = static_cast<unsigned>(
+                //     tt.route_transport_ranges_[route_to_idx].size());
                 auto const location_to_next_mam =
                     tt.event_mam(route_to_idx, transport_to_idx,
                                  stop_to_idx + 1, event_type::kDep);
@@ -201,17 +200,16 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                 }
                 //[b_u]'' <-- ...
                 auto transport_to_bf_cc = transport_to_bf;
-                transport_to_bf_cc.operator>>=(location_to_next_mam.count() /
-                                               1440);
-                transport_to_bf_cc.operator<<=(next_c);
+                transport_to_bf_cc >>= location_to_next_mam.count() / 1440;
+                transport_to_bf_cc <<= next_c;
                 //[b_tr]'
                 auto transfer_bf_cpy =
                     tt.bitfields_[transport_from_bf_cc_m_idx];
-                transfer_bf_cpy.operator&=(transport_to_bf_cc);
+                transfer_bf_cpy &= transport_to_bf_cc;
                 //[b_tr] <--
-                transfer_bf_cpy.operator>>(day_diff.count());
-                transfer_bf_cpy.operator~();
-                transfer_bf.operator&=(transfer_bf_cpy);
+                transfer_bf_cpy >>= day_diff.count();
+                transfer_bf_cpy = ~transfer_bf_cpy;
+                transfer_bf &= transfer_bf_cpy;
               }
               if (!transfer_bf.any()) {
                 continue;
@@ -228,10 +226,10 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                   break;
                 }
                 // TODO: complete method call
-                keep.operator|=(tt.bitfields_[update_time(
+                keep |= tt.bitfields_[update_time(
                     arrival_times, location_idx_t{*next_locs},
                     *(ea_time + (next_locs - location_to_pos_it)) % 1440,
-                    transfer_bf, day_change)]);
+                    transfer_bf, day_change)];
                 // Iter through footpaths
                 auto const next_locs_foot =
                     tt.locations_.footpaths_out_[location_idx_t{*next_locs}];
@@ -243,18 +241,18 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                        next_locs_foot.at(next_locs_to_idx).duration_) %
                       1440;
                   // TODO: complete method call
-                  keep.operator|=(tt.bitfields_[update_time(
+                  keep |= tt.bitfields_[update_time(
                       arrival_times,
                       next_locs_foot.at(next_locs_to_idx).target_, arr_to_time,
-                      transfer_bf, day_change)]);
-                  keep.operator|=(tt.bitfields_[update_time(
+                      transfer_bf, day_change)];
+                  keep |= tt.bitfields_[update_time(
                       ea_change_times,
                       next_locs_foot.at(next_locs_to_idx).target_, arr_to_time,
-                      transfer_bf, day_change)]);
+                      transfer_bf, day_change)];
                 }
               }
               if (keep.any()) {
-                transport_from_bf_cpy.operator&=(keep.operator~());
+                transport_from_bf_cpy &= ~keep;
                 auto const new_transfer =
                     transfer(transport_to_idx, stop_from_idx,
                              get_bitfield_idx(keep), day_change);
