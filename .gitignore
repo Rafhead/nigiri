@@ -2,3 +2,5 @@
 /deps
 /.idea
 /.clang-tidy
+nigiri
+nigiri.pub
