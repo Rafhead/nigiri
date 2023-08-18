@@ -13,6 +13,9 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
   duration_t footpath_duration;
   minutes_after_midnight_t transport_from_mam;
   // minutes_after_midnight_t transport_to_mam;
+  // Whether after transfer to u and traversing next station a footpath can make
+  // day change
+  bool day_change_footpath;
 
   auto bitfields = hash_map<bitfield, bitfield_idx_t>{};
   for (auto const [i, bf] : utl::enumerate(tt.bitfields_)) {
@@ -219,7 +222,16 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               // for each stop p_k^u ...
               for (auto next_locs = location_to_pos_it;
                    next_locs < route_to_stop_seq.end(); ++next_locs) {
-                // TODO: adapt day_change for the stations after transfer
+                // TODO: adapt to day change by comparison with the station
+                // TODO: where the transfer was made
+                // It is: (footpath from t to u) + (time since changed to u
+                // (time at change station - time at next station ))
+                if (!day_change &&
+                    ((ea_time + (next_locs - location_to_pos_it))->count() %
+                     1440) - (transport_from_mam.count() % 1440) <
+                        0) {
+                  day_change = true;
+                }
                 // 24 hrs max journey duration check
                 if (day_change &&
                     ((ea_time + (next_locs - location_to_pos_it))->count() %
@@ -238,19 +250,27 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                 for (size_t next_locs_to_idx = 0;
                      next_locs_to_idx != next_locs_foot.size();
                      ++next_locs_to_idx) {
+                  day_change_footpath = day_change;
                   auto const arr_to_time =
                       (*ea_time +
                        next_locs_foot.at(next_locs_to_idx).duration_) %
                       1440;
+                  // TODO: same adoption to the day change here. + footpath
+                  if (!day_change &&
+                      arr_to_time.count() -
+                              (transport_from_mam.count() % 1440) <
+                          0) {
+                    day_change_footpath = true;
+                  }
                   // TODO: complete method call
                   keep |= tt.bitfields_[update_time(
                       arrival_times,
                       next_locs_foot.at(next_locs_to_idx).target_, arr_to_time,
-                      transfer_bf, day_change)];
+                      transfer_bf, day_change_footpath)];
                   keep |= tt.bitfields_[update_time(
                       ea_change_times,
                       next_locs_foot.at(next_locs_to_idx).target_, arr_to_time,
-                      transfer_bf, day_change)];
+                      transfer_bf, day_change_footpath)];
                 }
               }
               if (keep.any()) {
