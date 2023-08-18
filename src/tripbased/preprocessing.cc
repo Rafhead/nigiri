@@ -35,9 +35,11 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
     for (auto transport_from_idx :
          tt.route_transport_ranges_[route_idx_t{route_from_idx_}]) {
       // To store to bitsets in timetable for times on stations
-      vecvec<location_idx_t, std::pair<minutes_after_midnight_t, bitfield>>
+      mutable_fws_multimap<location_idx_t,
+                           std::pair<minutes_after_midnight_t, bitfield>>
           arrival_times;
-      vecvec<location_idx_t, std::pair<minutes_after_midnight_t, bitfield>>
+      mutable_fws_multimap<location_idx_t,
+                           std::pair<minutes_after_midnight_t, bitfield>>
           ea_change_times;
       vector<vector<transfer>> trip_transfers;
       // Iterate through all stops of this route in opposite direction
@@ -124,7 +126,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                 it_range{std::lower_bound(
                              location_to_event_times.begin(),
                              location_to_event_times.end(), mam_at_stop_from,
-                             [&](auto&& a, auto&& b) { return a <= b; }),
+                             [&](auto&& a, auto&& b) { return a < b; }),
                          location_to_event_times.end()};
             // TODO: iterator belongs to the earliest time on
             // station based on the arrival time?
@@ -275,6 +277,39 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
   }
 
   return transfers;
+}
+
+bitfield_idx_t update_time(
+    mutable_fws_multimap<location_idx_t,
+                         std::pair<minutes_after_midnight_t, bitfield>>& times,
+    location_idx_t l_idx,
+    minutes_after_midnight_t new_time_on_l,
+    const bitfield bf,
+    bool day_change) {
+  auto bf_cpy = bf >> day_change;
+  // check if empty
+  if (times[l_idx].empty()) {
+    // insert
+    times[l_idx].emplace_back(new_time_on_l, bf_cpy);
+  } else {
+    auto equal = false;
+    auto improve = cista::bitset<512>();
+    auto temp_bf = cista::bitset<512>();
+    minutes_after_midnight_t time_on_l;
+    cista::bitset<512>* bf_on_l_time;
+    auto times_on_l = times[l_idx];
+    for (auto time_on_l_it = times_on_l.begin();
+         time_on_l_it <= times_on_l.end(); time_on_l_it++) {
+      bf_on_l_time = &time_on_l_it->second;
+      // if new time is earlier
+      if (new_time_on_l.count() < time_on_l_it->first.count()) {
+        temp_bf = *bf_on_l_time & ~(bf_cpy & *bf_on_l_time);
+        improve = improve | (*bf_on_l_time & ~temp_bf);
+        // keep time although the bitset is 0
+        time_on_l_it->second = temp_bf;
+      }
+    }
+  }
 }
 
 }  // namespace nigiri::tripbased
