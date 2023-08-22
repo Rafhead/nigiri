@@ -4,7 +4,9 @@
 
 namespace nigiri::tripbased {
 
-tripbased::tripbased(timetable& tt, routing::query q)
-    : tt_{tt}, q_{std::move(q)} {}
+tripbased::tripbased(timetable& tt,
+                     routing::query q,
+                     nvec<uint32_t, transfer, 2>& transfers)
+    : tt_{tt}, q_{std::move(q)}, transfers_(transfers) {}
 
 }  // namespace nigiri::tripbased

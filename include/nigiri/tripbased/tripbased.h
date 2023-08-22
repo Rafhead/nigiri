@@ -13,11 +13,14 @@ struct timetable;
 namespace nigiri::tripbased {
 
 struct tripbased {
-  tripbased(timetable& tt, routing::query q);
+  tripbased(timetable& tt,
+            routing::query q,
+            nvec<std::uint32_t, transfer, 2>& transfers);
 
 private:
   timetable& tt_;
   routing::query q_;
+  nvec<std::uint32_t, transfer, 2>& transfers_;
 };
 
 }  // namespace nigiri::tripbased
