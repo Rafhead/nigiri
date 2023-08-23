@@ -23,15 +23,17 @@ void register_special_stations(timetable& tt) {
                                              timezone_idx_t::invalid(),
                                              0_minutes,
                                              it_range{empty_idx_vec},
-                                             it_range{empty_footpath_vec},
-                                             it_range{empty_footpath_vec}});
+                                             std::span{empty_footpath_vec},
+                                             std::span{empty_footpath_vec}});
   }
+  tt.location_routes_.resize(tt.n_locations());
+  tt.bitfields_.emplace_back(bitfield{});  // bitfield_idx 0 = 000...00 bitfield
 }
 
-void finalize(timetable& tt) {
-  // Resizes location_routes_ so even if the last station does not have a route
-  // serving it, accessing it yields an empty list, not a crash.
-  tt.location_routes_[location_idx_t{tt.locations_.src_.size() - 1}];
+void finalize(timetable& tt,
+              bool const adjust_footpaths,
+              bool const merge_duplicates) {
+  tt.location_routes_.resize(tt.n_locations());
 
   {
     auto const timer = scoped_timer{"loader.sort_trip_ids"};
@@ -42,11 +44,13 @@ void finalize(timetable& tt) {
         begin(tt.trip_id_to_idx_), end(tt.trip_id_to_idx_),
         [&](pair<trip_id_idx_t, trip_idx_t> const& a,
             pair<trip_id_idx_t, trip_idx_t> const& b) {
-          return tt.trip_id_strings_[a.first].view() <
-                 tt.trip_id_strings_[b.first].view();
+          return std::tuple(tt.trip_id_src_[a.first],
+                            tt.trip_id_strings_[a.first].view()) <
+                 std::tuple(tt.trip_id_src_[b.first],
+                            tt.trip_id_strings_[b.first].view());
         });
   }
-  build_footpaths(tt);
+  build_footpaths(tt, adjust_footpaths, merge_duplicates);
   build_lb_graph<direction::kForward>(tt);
   build_lb_graph<direction::kBackward>(tt);
 }

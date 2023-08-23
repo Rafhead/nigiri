@@ -25,7 +25,7 @@ constexpr auto const data = std::string_view{R"(0000001     A
 0000016     P
 )"};
 
-TEST(dir_test, file_contents) {
+TEST(dir, file_contents) {
   auto const fs = fs_dir{"test/test_data/mss-dayshift3"};
   auto const zip = zip_dir{"test/test_data/mss-dayshift3.zip"};
   auto const mem = mem_dir{{{"stamm/bahnhof.101", std::string{data}}}};
@@ -42,7 +42,7 @@ TEST(dir_test, file_contents) {
   }
 }
 
-TEST(dir_test, directory_listing) {
+TEST(dir, directory_listing) {
   auto const zip = zip_dir{"test/test_data/mss-dayshift3.zip"};
   auto const fs = fs_dir{"test/test_data/mss-dayshift3"};
   auto const mem = mem_dir{mem_dir::dir_t{{"stamm/attributd_int.101", ""},
@@ -69,4 +69,39 @@ TEST(dir_test, directory_listing) {
             fs.list_files("stamm/bahnhof.101"));
   EXPECT_EQ(mem.list_files("stamm/bahnhof.101"),
             fs.list_files("stamm/bahnhof.101"));
+}
+
+TEST(nigiri, to_dir) {
+  using namespace std::string_view_literals;
+  constexpr auto const gtfs = R"(
+# agency.txt
+agency_id,agency_name,agency_url,agency_timezone,agency_lang,agency_phone
+"11","Schweizerische Bundesbahnen SBB","http://www.sbb.ch/","Europe/Berlin","DE","0848 44 66 88"
+
+# calendar.txt
+"TA+xce80","1","1","1","1","1","0","0","20221211","20231209"
+
+# calendar_dates.txt
+service_id,date,exception_type
+"TA+xce80","20231028","1"
+"TA+xce80","20231029","1"
+"TA+xce80","20231030","2"
+"TA+xce80","20231031","2"
+"TA+xce80","20231101","2"
+)"sv;
+
+  auto const dir = mem_dir::read(gtfs);
+  EXPECT_EQ(
+      dir.get_file("agency.txt").data(),
+      R"(agency_id,agency_name,agency_url,agency_timezone,agency_lang,agency_phone
+"11","Schweizerische Bundesbahnen SBB","http://www.sbb.ch/","Europe/Berlin","DE","0848 44 66 88"
+)"sv);
+  EXPECT_EQ(dir.get_file("calendar_dates.txt").data(),
+            R"(service_id,date,exception_type
+"TA+xce80","20231028","1"
+"TA+xce80","20231029","1"
+"TA+xce80","20231030","2"
+"TA+xce80","20231031","2"
+"TA+xce80","20231101","2"
+)"sv);
 }

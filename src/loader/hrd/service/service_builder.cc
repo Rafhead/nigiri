@@ -60,12 +60,20 @@ void service_builder::add_services(config const& c,
                  [&](ref_service&& s) { add_service(std::move(s)); });
 }
 
-void service_builder::write_services(const nigiri::source_idx_t src) {
+void service_builder::write_services(source_idx_t const src) {
   auto const timer = scoped_timer{"loader.hrd.services.write"};
   for (auto const& [key, sub_routes] : route_services_) {
     for (auto const& services : sub_routes) {
       auto const& [stop_seq, sections_clasz] = key;
       auto const route_idx = tt_.register_route(stop_seq, sections_clasz);
+
+      for (auto const& s : stop_seq) {
+        auto s_routes = location_routes_[stop{s}.location_idx()];
+        if (s_routes.empty() || s_routes.back() != route_idx) {
+          s_routes.emplace_back(route_idx);
+        }
+      }
+
       for (auto const& s : services) {
         auto const& ref = store_.get(s.ref_);
         try {
@@ -80,8 +88,11 @@ void service_builder::write_services(const nigiri::source_idx_t src) {
 
           auto const id = tt_.register_trip_id(
               trip_id_buf_, src, ref.display_name(tt_), ref.origin_.dbg_,
+              ref.initial_train_num_, {});
+          tt_.trip_transport_ranges_.emplace_back({transport_range_t{
               tt_.next_transport_idx(),
-              {0U, static_cast<unsigned>(stop_seq.size())});
+              interval<stop_idx_t>{0U,
+                                   static_cast<stop_idx_t>(stop_seq.size())}}});
 
           auto const get_attribute_combination_idx =
               [&](std::optional<std::vector<service::attribute>> const& a,
@@ -192,11 +203,13 @@ void service_builder::write_services(const nigiri::source_idx_t src) {
                   bitfield_indices_, s.utc_traffic_days_,
                   [&]() { return tt_.register_bitfield(s.utc_traffic_days_); }),
               .route_idx_ = route_idx,
+              .first_dep_offset_ = 0_minutes,
               .external_trip_ids_ = {merged_trip},
               .section_attributes_ = section_attributes_,
               .section_providers_ = section_providers_,
               .section_directions_ = section_directions_,
-              .section_lines_ = section_lines_});
+              .section_lines_ = section_lines_,
+              .stop_seq_numbers_ = stop_seq_numbers_});
         } catch (std::exception const& e) {
           log(log_lvl::error, "loader.hrd.service",
               "unable to load service {}: {}", ref.origin_, e.what());
@@ -249,6 +262,13 @@ void service_builder::write_services(const nigiri::source_idx_t src) {
   }
   route_services_.clear();
   store_.clear();
+}
+
+void service_builder::write_location_routes() {
+  for (auto l = tt_.location_routes_.size(); l != tt_.n_locations(); ++l) {
+    tt_.location_routes_.emplace_back(location_routes_[location_idx_t{l}]);
+    assert(tt_.location_routes_.size() == l + 1U);
+  }
 }
 
 }  // namespace nigiri::loader::hrd
