@@ -19,9 +19,9 @@ struct tripbased {
             nvec<std::uint32_t, transfer, 2>& transfers);
 
 private:
-  timetable& tt_;
-  routing::query q_;
-  nvec<std::uint32_t, transfer, 2>& transfers_;
+  const timetable& tt_;
+  const routing::query q_;
+  const nvec<std::uint32_t, transfer, 2>& transfers_;
   std::queue<std::uint16_t> trip_segments_;
 };
 
