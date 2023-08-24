@@ -23,42 +23,65 @@ struct tripbased_stats {
 struct tripbased_state {
   std::vector<trip_segment> trip_segments_;
 
-  trip_segment& get_next_segment() { return trip_segments_[last_]; }
-
-  trip_segment& get_segment(size_t i) {
-    if (i < trip_segments_.size()) {
-      return trip_segments_[i];
-    }
-    std::cout << "Trying to get a segment outside of range: "
-              << trip_segments_.size() << i << std::endl;
-    return trip_segments_[last_];
-  }
-
   void add(trip_segment& new_segment) { trip_segments_.push_back(new_segment); }
 
   void reset() { trip_segments_.resize(0); }
-
-private:
-  size_t last_ = 0U;
 };
 
 struct tripbased {
   using algo_stats_t = tripbased_stats;
   using algo_state_t = tripbased_state;
   tripbased(timetable const& tt,
-            routing::query const& q,
-            nvec<std::uint32_t, transfer, 2>& transfers)
-      : tt_{tt}, q_{q}, transfers_{transfers} {};
+            tripbased_state& state,
+            std::vector<bool>& is_dest,
+            nvec<std::uint32_t, transfer, 2>& transfers,
+            day_idx_t const base)
+      : tt_{tt}, state_{state}, is_dest_{is_dest}, transfers_{transfers} {
+    first_locs_.resize(2);
+    first_locs_[0].resize(tt_.transport_to_trip_section_.size());
+    first_locs_[1].resize(tt_.transport_to_trip_section_.size());
+  };
+
+  trip_segment& get_next_segment() {
+    return state_.trip_segments_[last_removed_];
+  }
+
+  trip_segment& get_segment(size_t i) {
+    if (i < state_.trip_segments_.size()) {
+      return state_.trip_segments_[i];
+    }
+    std::cout << "Trying to get a segment outside of range: "
+              << state_.trip_segments_.size() << i << std::endl;
+    return state_.trip_segments_[last_removed_];
+  }
 
   // Reset completely R(t)
-  void reset_arrivals() {}
+  void reset_arrivals() {
+    first_locs_.resize(0);
+    first_locs_[0].resize(0);
+    first_locs_[1].resize(0);
+    first_locs_.resize(2);
+    first_locs_[0].resize(tt_.transport_to_trip_section_.size());
+    first_locs_[1].resize(tt_.transport_to_trip_section_.size());
+  }
 
   // Used when iterating through start times
   // trip_segments_ must be emptied
-  void next_start_time() {}
+  void next_start_time() { state_.reset(); }
 
   // Add start stations - init for algorithm
-  void add_start() {}
+  void add_start(location_idx_t const l, unixtime_t const t) {
+    auto const time = tt_.day_idx_mam(t);
+    abs_q_mam_ = minutes_after_midnight_t{time.first.v_ * 1440} + time.second;
+    std::cout << "Time on first station " << l << " is " << abs_q_mam_
+              << std::endl;
+    auto const src_loc = tt_.locations_.get(l);
+    // TODO: find out the earliest trip for a line based on time
+
+    auto const src_loc_footpaths = src_loc.footpaths_out_;
+    for (auto footpath_it : src_loc_footpaths) {
+    }
+  }
 
   // EA query itself - main part of algorithm
   void execute() {}
@@ -67,9 +90,25 @@ struct tripbased {
   void reconstruct() {}
 
 private:
-  const timetable& tt_;
-  const routing::query& q_;
+  void enqueue(transport_idx_t t_idx,
+               size_t stop_index,
+               size_t n_transfers_,
+               size_t day_idx) {
+    // TODO: check u is on the same day
+    if (stop_index < first_locs_[day_idx][t_idx.v_].v_) {
+      auto const new_trip_segment = trip_segment();
+    }
+  }
+  timetable const& tt_;
+  tripbased_state& state_;
+  const std::vector<bool>& is_dest_;
   const nvec<std::uint32_t, transfer, 2>& transfers_;
+  std::vector<location_idx_t> first_locs_d_;
+  std::vector<location_idx_t> first_locs_d_next;
+  std::vector<std::vector<location_idx_t>> first_locs_;
+  size_t last_added_ = 0U;
+  size_t last_removed_ = 0U;
+  minutes_after_midnight_t abs_q_mam_;
 };
 
 }  // namespace nigiri::tripbased
