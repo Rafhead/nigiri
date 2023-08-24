@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cinttypes>
+#include <variant>
 
 #include "date/date.h"
 #include "date/tz.h"
@@ -21,6 +22,8 @@
 #include "cista/containers/vecvec.h"
 #include "cista/reflection/printable.h"
 #include "cista/strong.h"
+
+#include "nigiri/common/interval.h"
 
 namespace nigiri {
 
@@ -45,7 +48,7 @@ using bitset = cista::bitset<Size>;
 constexpr auto const kMaxDays = 512;
 using bitfield = bitset<kMaxDays>;
 
-using bitvec = cista::offset::bitvec;
+using bitvec = cista::raw::bitvec;
 
 template <typename... Args>
 using tuple = cista::tuple<Args...>;
@@ -54,46 +57,48 @@ template <typename A, typename B>
 using pair = cista::pair<A, B>;
 
 template <typename K, typename V>
-using vector_map = cista::offset::vector_map<K, V>;
+using vector_map = cista::raw::vector_map<K, V>;
 
 template <typename T>
-using vector = cista::offset::vector<T>;
+using vector = cista::raw::vector<T>;
 
 template <typename T>
 using matrix = cista::raw::flat_matrix<T>;
 using cista::raw::make_flat_matrix;
 
-using cista::offset::to_vec;
+using cista::raw::to_vec;
 
 template <typename... Ts>
 using variant = cista::variant<Ts...>;
 using cista::get;
 using cista::holds_alternative;
 
-template <typename K, typename V>
-using vecvec = cista::offset::vecvec<K, V>;
+template <typename K, typename V, typename SizeType = cista::base_t<K>>
+using vecvec = cista::raw::vecvec<K, V, SizeType>;
 
 template <typename K, typename V>
-using mutable_fws_multimap = cista::offset::mutable_fws_multimap<K, V>;
+using mutable_fws_multimap = cista::raw::mutable_fws_multimap<K, V>;
 
 template <typename K,
           typename V,
           typename Hash = cista::hash_all,
           typename Equality = cista::equals_all>
-using hash_map = cista::offset::ankerl_map<K, V, Hash, Equality>;
+using hash_map = cista::raw::ankerl_map<K, V, Hash, Equality>;
 
 template <typename K,
           typename Hash = cista::hash_all,
           typename Equality = cista::equals_all>
-using hash_set = cista::offset::ankerl_set<K, Hash, Equality>;
+using hash_set = cista::raw::ankerl_set<K, Hash, Equality>;
 
-using string = cista::offset::string;
+using stop_idx_t = std::uint16_t;
+
+using string = cista::raw::string;
 
 template <typename T>
 using optional = cista::optional<T>;
 
 template <typename Key, typename T, std::size_t N>
-using nvec = cista::offset::nvec<Key, T, N>;
+using nvec = cista::raw::nvec<Key, T, N>;
 
 using bitfield_idx_t = cista::strong<std::uint32_t, struct _bitfield_idx>;
 using location_idx_t = cista::strong<std::uint32_t, struct _location_idx>;
@@ -104,7 +109,6 @@ using section_db_idx_t = cista::strong<std::uint32_t, struct _section_db_idx>;
 using trip_idx_t = cista::strong<std::uint32_t, struct _trip_idx>;
 using trip_id_idx_t = cista::strong<std::uint32_t, struct _trip_id_str_idx>;
 using transport_idx_t = cista::strong<std::uint32_t, struct _transport_idx>;
-using rt_trip_idx_t = cista::strong<std::uint32_t, struct _rt_trip_idx>;
 using source_idx_t = cista::strong<std::uint8_t, struct _source_idx>;
 using day_idx_t = cista::strong<std::uint16_t, struct _day_idx>;
 using timezone_idx_t = cista::strong<std::uint8_t, struct _timezone_idx>;
@@ -112,7 +116,15 @@ using merged_trips_idx_t =
     cista::strong<std::uint32_t, struct _merged_trips_idx>;
 using footpath_idx_t = cista::strong<std::uint32_t, struct _footpath_idx>;
 using source_file_idx_t = cista::strong<std::uint16_t, struct _source_file_idx>;
-using track_name_idx_t = cista::strong<std::uint16_t, struct _track_name_idx>;
+
+using rt_trip_idx_t = cista::strong<std::uint32_t, struct _trip_idx>;
+using rt_add_trip_id_idx_t =
+    cista::strong<std::uint32_t, struct _trip_id_str_idx>;
+using rt_route_idx_t = cista::strong<std::uint32_t, struct _rt_route_idx>;
+using rt_transport_idx_t =
+    cista::strong<std::uint32_t, struct _rt_transport_idx>;
+using rt_merged_trips_idx_t =
+    cista::strong<std::uint32_t, struct _merged_trips_idx>;
 
 using line_id_t = string;
 
@@ -127,6 +139,8 @@ using attribute_idx_t = cista::strong<std::uint32_t, struct _attribute_idx>;
 using attribute_combination_idx_t =
     cista::strong<std::uint32_t, struct _attribute_combination>;
 using provider_idx_t = cista::strong<std::uint32_t, struct _provider_idx>;
+
+using transport_range_t = pair<transport_idx_t, interval<stop_idx_t>>;
 
 struct trip_debug {
   source_file_idx_t source_file_idx_;
@@ -148,8 +162,11 @@ struct provider {
 
 struct trip_id {
   CISTA_COMPARABLE()
-  CISTA_PRINTABLE(trip_id, "id", "src")
-  std::string id_;
+  inline friend std::ostream& operator<<(std::ostream& out, trip_id const tid) {
+    return out << "{id=" << tid.id_
+               << ", src=" << static_cast<int>(to_idx(tid.src_)) << "}";
+  }
+  std::string_view id_;
   source_idx_t src_;
 };
 
@@ -160,8 +177,18 @@ struct location_id {
   source_idx_t src_;
 };
 
+struct debug {
+  inline friend std::ostream& operator<<(std::ostream& out, debug const dbg) {
+    return out << dbg.path_ << ":" << dbg.line_from_ << ":" << dbg.line_to_;
+  }
+  std::string_view path_;
+  unsigned line_from_{0U}, line_to_{0U};
+};
+
 struct transport {
+  CISTA_FRIEND_COMPARABLE(transport)
   CISTA_PRINTABLE(transport, "idx", "day")
+  static transport invalid() noexcept { return transport{}; }
   constexpr bool is_valid() const { return day_ != day_idx_t::invalid(); }
   transport_idx_t t_idx_{transport_idx_t::invalid()};
   day_idx_t day_{day_idx_t::invalid()};
@@ -199,7 +226,6 @@ struct tz_offsets {
     duration_t season_begin_mam_{0};
     duration_t season_end_mam_{0};
   };
-  friend std::ostream& operator<<(std::ostream&, tz_offsets const&);
   vector<season> seasons_;
   duration_t offset_{0};
 };
@@ -273,6 +299,11 @@ inline std::ostream& operator<<(std::ostream& out,
 }
 
 inline std::ostream& operator<<(std::ostream& out,
+                                nigiri::duration_t const& t) {
+  return out << std::chrono::duration_cast<nigiri::i32_minutes>(t);
+}
+
+inline std::ostream& operator<<(std::ostream& out,
                                 nigiri::unixtime_t const& t) {
   date::to_stream(out, "%F %R", t);
   return out;
@@ -283,6 +314,68 @@ inline std::ostream& operator<<(std::ostream& out,
 #include <iostream>
 
 namespace nigiri {
+
+struct delta {
+  explicit delta(duration_t const d)
+      : days_{static_cast<std::uint16_t>(d.count() / 1440)},
+        mam_{static_cast<std::uint16_t>(d.count() % 1440)} {
+    assert(d.count() >= 0);
+  }
+
+  explicit delta(std::uint16_t const minutes)
+      : days_{static_cast<std::uint16_t>(minutes / 1440U)},
+        mam_{static_cast<std::uint16_t>(minutes % 1440U)} {}
+
+  delta(std::uint16_t const day, std::uint16_t const mam)
+      : days_{day}, mam_{mam} {}
+
+  std::uint16_t value() const {
+    return *reinterpret_cast<std::uint16_t const*>(this);
+  }
+
+  std::int16_t days() const { return days_; }
+  std::int16_t mam() const { return mam_; }
+
+  friend std::ostream& operator<<(std::ostream& out, delta const& d) {
+    return out << duration_t{static_cast<duration_t::rep>(d.mam_)} << "."
+               << d.days_;
+  }
+
+  friend delta operator-(delta const a, delta const b) {
+    return delta{static_cast<std::uint16_t>((a.days_ - b.days_) * 1440U +
+                                            (a.mam_ - b.mam_))};
+  }
+
+  cista::hash_t hash() const {
+    return cista::hash_combine(cista::BASE_HASH, value());
+  }
+
+  duration_t as_duration() const { return days() * 1_days + mam() * 1_minutes; }
+
+  std::int16_t count() const { return days_ * 1440U + mam_; }
+
+  friend bool operator<(delta const a, delta const b) {
+    return a.value() < b.value();
+  }
+  friend bool operator==(delta const a, delta const b) {
+    return a.value() == b.value();
+  }
+
+  std::uint16_t days_ : 5;
+  std::uint16_t mam_ : 11;
+};
+
+template <std::size_t NMaxTypes>
+constexpr auto static_type_hash(delta const*,
+                                cista::hash_data<NMaxTypes> h) noexcept {
+  return h.combine(cista::hash("nigiri::delta"));
+}
+
+template <typename Ctx>
+inline void serialize(Ctx&, delta const*, cista::offset_t const) {}
+
+template <typename Ctx>
+inline void deserialize(Ctx const&, delta*) {}
 
 inline local_time to_local_time_offsets(tz_offsets const& offsets,
                                         unixtime_t const t) {
