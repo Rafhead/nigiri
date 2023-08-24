@@ -5,6 +5,8 @@
 namespace nigiri::tripbased {
 
 struct trip_segment {
+  trip_segment() = default;
+
   trip_segment(transport_idx_t t_idx,
                location_idx_t from_idx,
                location_idx_t to_idx)
