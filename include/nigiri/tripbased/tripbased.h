@@ -47,10 +47,12 @@ struct tripbased {
     utl::fill(first_locs_[1], 256U);
 
     n_transfers_ = 0U;
-    is_dest_.resize(tt_.n_locations());
 
+    is_dest_.resize(tt_.n_locations());
+    is_dest_line_.resize(tt_.n_routes());
     utl::fill(is_dest_, std::make_pair(false, duration_t{0U}));
-    find_targets(is_dest);
+    utl::fill(is_dest_line_, std::make_pair(0U, duration_t{0}));
+    find_target_lines(is_dest);
   };
 
   trip_segment& get_next_segment() {
@@ -220,19 +222,53 @@ private:
     }
   }
 
-  void find_targets(std::vector<bool>& is_dest) {
+  // TODO: same line visits multiple destination stops
+  // structure dest_lines with stop offset and duration
+  void find_target_lines(std::vector<bool>& is_dest) {
     for (auto i = 0U; i < is_dest.size(); i++) {
       if (is_dest[i]) {
+        // For initial destination itself
+        auto routes_from_loc = tt_.location_routes_[location_idx_t{i}];
+        for (auto route_from_loc : routes_from_loc) {
+          auto stop_idx = 0U;
+          auto const route_stops = tt_.route_location_seq_[route_from_loc];
+          // Find index of the location relative to route
+          // TODO: multiple same stations - circled routes?
+          for (auto route_loc : route_stops) {
+            if (route_loc == i) {
+              stop_idx = route_loc;
+              break;
+            }
+          }
+          is_dest_line_[route_from_loc.v_] =
+              std::make_pair(stop_idx, duration_t{0U});
+        }
         // TODO: footpaths_in are footpath from other stations to this?
         auto const footpaths_in =
             tt_.locations_.get(location_idx_t{i}).footpaths_in_;
         auto duration = duration_t{0U};
-        auto from_location_idx = location_idx_t{0U};
+        auto from_loc_idx = location_idx_t{0U};
         // TODO: meta stations? start_times.cc
         for (auto footpath : footpaths_in) {
           duration = footpath.duration();
-          from_location_idx = footpath.target();
-          is_dest_[from_location_idx.v_] = std::make_pair(true, duration);
+          from_loc_idx = footpath.target();
+          is_dest_[from_loc_idx.v_] = std::make_pair(true, duration);
+          // Iterate through routes of this location
+          routes_from_loc = tt_.location_routes_[from_loc_idx];
+          for (auto route_from_loc : routes_from_loc) {
+            auto stop_idx = 0U;
+            auto const route_stops = tt_.route_location_seq_[route_from_loc];
+            // Find index of the location relative to route
+            // TODO: multiple same stations - circled routes?
+            for (auto route_loc : route_stops) {
+              if (route_loc == from_loc_idx.v_) {
+                stop_idx = route_loc;
+                break;
+              }
+            }
+            is_dest_line_[route_from_loc.v_] =
+                std::make_pair(stop_idx, duration);
+          }
         }
       }
     }
@@ -241,6 +277,7 @@ private:
   timetable const& tt_;
   tripbased_state& state_;
   std::vector<std::pair<bool, duration_t>> is_dest_;
+  std::vector<std::pair<uint32_t, duration_t>> is_dest_line_;
   const nvec<std::uint32_t, transfer, 2>& transfers_;
   std::vector<std::vector<size_t>> first_locs_;
   size_t last_added_ = 0U;
