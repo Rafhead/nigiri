@@ -24,7 +24,9 @@ struct tripbased_stats {
 struct tripbased_state {
   std::vector<trip_segment> trip_segments_;
 
-  void add(trip_segment& new_segment) { trip_segments_.push_back(new_segment); }
+  void add(trip_segment const& new_segment) {
+    trip_segments_.push_back(new_segment);
+  }
 
   void reset() { trip_segments_.resize(0); }
 };
@@ -39,7 +41,14 @@ struct tripbased {
       : tt_{tt}, state_{state}, is_dest_{is_dest}, transfers_{transfers} {
     first_locs_.resize(2);
     first_locs_[0].resize(tt_.transport_to_trip_section_.size());
+    for (auto loc : first_locs_[0]) {
+      loc = 256U;
+    }
     first_locs_[1].resize(tt_.transport_to_trip_section_.size());
+    for (auto loc : first_locs_[1]) {
+      loc = 256U;
+    }
+    n_transfers_ = 0U;
   };
 
   trip_segment& get_next_segment() {
@@ -62,29 +71,40 @@ struct tripbased {
     first_locs_[1].resize(0);
     first_locs_.resize(2);
     first_locs_[0].resize(tt_.transport_to_trip_section_.size());
+    for (auto loc : first_locs_[0]) {
+      loc = 256U;
+    }
     first_locs_[1].resize(tt_.transport_to_trip_section_.size());
+    for (auto loc : first_locs_[1]) {
+      loc = 256U;
+    }
   }
 
   // Used when iterating through start times
   // trip_segments_ must be emptied
-  void next_start_time() { state_.reset(); }
+  void next_start_time() {
+    state_.reset();
+    n_transfers_ = 0U;
+  }
 
   // Add start stations - init for algorithm
   void add_start(location_idx_t const l, unixtime_t const t) {
     // day = absolute day index
     auto const [day, mam] = tt_.day_idx_mam(t);
+    q_day_ = day;
+    q_mam_ = mam;
     abs_q_mam_ = minutes_after_midnight_t{day.v_ * 1440U} + mam;
     std::cout << "Time on first station " << l << " is " << abs_q_mam_
               << std::endl;
 
     // for the first location
-    enqueue_start_trips(l, day, mam, duration_t{0U});
+    enqueue_start_trips(l, duration_t{0U});
 
     // for all that are reachable by footpath
     auto const src_loc = tt_.locations_.get(l);
     auto const src_loc_footpaths = src_loc.footpaths_out_;
     for (auto footpath : src_loc_footpaths) {
-      enqueue_start_trips(footpath.target(), day, mam, footpath.duration());
+      enqueue_start_trips(footpath.target(), footpath.duration());
     }
   }
 
@@ -95,24 +115,48 @@ struct tripbased {
   void reconstruct() {}
 
 private:
-  void enqueue(transport_idx_t t_idx,
+  void enqueue(route_idx_t r_idx,
+               transport_idx_t t_idx,
                size_t stop_index,
-               size_t n_transfers_,
+               size_t n_transfers,
                size_t day_idx) {
-    // TODO: check u is on the same day
-    if (stop_index < first_locs_[day_idx][t_idx.v_].v_) {
-      auto const new_trip_segment = trip_segment();
+    if (stop_index < first_locs_[day_idx][t_idx.v_]) {
+      auto const latest_loc = first_locs_[day_idx][t_idx.v_];
+      auto new_trip_segment =
+          trip_segment(t_idx, stop_index, latest_loc, n_transfers_);
+      state_.add(new_trip_segment);
+
+      auto const& transport_bitset =
+          tt_.bitfields_[tt_.transport_traffic_days_[t_idx]];
+      auto const [day_at_stop, mam_at_stop] =
+          tt_.event_mam(t_idx, stop_index, event_type::kDep);
+      auto const transport_range = tt_.route_transport_ranges_[r_idx];
+      for (auto const transport : transport_range) {
+        if (transport == t_idx) {
+          continue;
+        }
+        // Check day if it is the same and time is later for other trips of the
+        // same line
+        auto const& next_transport_bitset =
+            tt_.bitfields_[tt_.transport_traffic_days_[transport]];
+        // TODO: Potentially count multiple same stations in route plan
+        auto const [next_transport_day_at_stop, next_transport_mam_at_stop] =
+            tt_.event_mam(transport, stop_index, event_type::kDep);
+        if (next_transport_bitset.test(to_idx(
+                q_day_ - next_transport_day_at_stop + day_idx_t{day_idx})) &&
+            next_transport_mam_at_stop >= mam_at_stop) {
+          first_locs_[day_idx][transport.v_] =
+              std::min(stop_index, first_locs_[day_idx][transport.v_]);
+        }
+      }
     }
   }
 
-  void enqueue_start_trips(location_idx_t l,
-                           day_idx_t day,
-                           duration_t mam,
-                           duration_t footpath) {
+  void enqueue_start_trips(location_idx_t l, duration_t footpath) {
     // Footpath can make day change
-    auto mam_to_target = mam + footpath;
+    auto mam_to_target = q_mam_ + footpath;
     auto day_change = false;
-    if (mam_to_target.count() / 1440U > mam.count() / 1440U) {
+    if (mam_to_target.count() / 1440U > q_mam_.count() / 1440U) {
       day_change = true;
       mam_to_target = duration_t{mam_to_target.count() - 1440U};
     }
@@ -124,6 +168,7 @@ private:
         auto const r_stop = stop{s};
 
         // Skip if this is another stop
+        // Loop continues for possible same stations in the route plan
         if (r_stop.location_idx() != l) {
           continue;
         }
@@ -139,6 +184,7 @@ private:
         auto const& transport_range = tt_.route_transport_ranges_[r_idx];
         auto ed_transport_idx = 8192U;
         auto ed_delta = delta{1024U, 1441U};
+        auto trip_on_the_next_day = 0U;
         for (auto const transport : transport_range) {
           auto const& transport_bitset =
               tt_.bitfields_[tt_.transport_traffic_days_[transport]];
@@ -149,25 +195,28 @@ private:
           // 2. On the next day   &&   mam of trip earlier that query mam &&
           //                           footpath doesn't make day change
           auto const transport_delta = delta{day_at_stop, mam_at_stop};
-          if (transport_bitset.test(to_idx(day - day_at_stop)) &&
+          if (transport_bitset.test(to_idx(q_day_ - day_at_stop)) &&
               mam_at_stop % 1440U >= mam_to_target.count() % 1440U &&
               transport_delta < ed_delta) {
             ed_transport_idx = transport.v_;
             ed_delta = transport_delta;
+            trip_on_the_next_day = 0U;
             continue;
           }
           if (!day_change &&
-              transport_bitset.test(to_idx(day + 1 - day_at_stop)) &&
+              transport_bitset.test(to_idx(q_day_ + 1U - day_at_stop)) &&
               mam_at_stop % 1440U < mam_to_target.count() % 1440U &&
               transport_delta < ed_delta) {
             ed_transport_idx = transport.v_;
             ed_delta = transport_delta;
+            trip_on_the_next_day = 1U;
           }
         }
 
         // If trip for this route was found
         if (ed_transport_idx != 8192U) {
-          enqueue(transport_idx_t{ed_transport_idx}, i, 0, ed_delta.days_);
+          enqueue(r_idx, transport_idx_t{ed_transport_idx}, i, 0,
+                  trip_on_the_next_day);
         }
       }
     }
@@ -177,12 +226,13 @@ private:
   tripbased_state& state_;
   const std::vector<bool>& is_dest_;
   const nvec<std::uint32_t, transfer, 2>& transfers_;
-  std::vector<location_idx_t> first_locs_d_;
-  std::vector<location_idx_t> first_locs_d_next;
-  std::vector<std::vector<location_idx_t>> first_locs_;
+  std::vector<std::vector<size_t>> first_locs_;
   size_t last_added_ = 0U;
   size_t last_removed_ = 0U;
   minutes_after_midnight_t abs_q_mam_;
+  day_idx_t q_day_;
+  minutes_after_midnight_t q_mam_;
+  size_t n_transfers_;
 };
 
 }  // namespace nigiri::tripbased
