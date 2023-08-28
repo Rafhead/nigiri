@@ -38,17 +38,19 @@ struct tripbased {
             tripbased_state& state,
             std::vector<bool>& is_dest,
             nvec<std::uint32_t, transfer, 2>& transfers)
-      : tt_{tt}, state_{state}, is_dest_{is_dest}, transfers_{transfers} {
+      : tt_{tt}, state_{state}, transfers_{transfers} {
     first_locs_.resize(2);
     first_locs_[0].resize(tt_.transport_to_trip_section_.size());
-    for (auto loc : first_locs_[0]) {
-      loc = 256U;
-    }
+    utl::fill(first_locs_[0], 256U);
+
     first_locs_[1].resize(tt_.transport_to_trip_section_.size());
-    for (auto loc : first_locs_[1]) {
-      loc = 256U;
-    }
+    utl::fill(first_locs_[1], 256U);
+
     n_transfers_ = 0U;
+    is_dest_.resize(tt_.n_locations());
+
+    utl::fill(is_dest_, std::make_pair(false, duration_t{0U}));
+    find_targets(is_dest);
   };
 
   trip_segment& get_next_segment() {
@@ -71,13 +73,9 @@ struct tripbased {
     first_locs_[1].resize(0);
     first_locs_.resize(2);
     first_locs_[0].resize(tt_.transport_to_trip_section_.size());
-    for (auto loc : first_locs_[0]) {
-      loc = 256U;
-    }
+    utl::fill(first_locs_[0], 256U);
     first_locs_[1].resize(tt_.transport_to_trip_section_.size());
-    for (auto loc : first_locs_[1]) {
-      loc = 256U;
-    }
+    utl::fill(first_locs_[1], 256U);
   }
 
   // Used when iterating through start times
@@ -222,9 +220,27 @@ private:
     }
   }
 
+  void find_targets(std::vector<bool>& is_dest) {
+    for (auto i = 0U; i < is_dest.size(); i++) {
+      if (is_dest[i]) {
+        // TODO: footpaths_in are footpath from other stations to this?
+        auto const footpaths_in =
+            tt_.locations_.get(location_idx_t{i}).footpaths_in_;
+        auto duration = duration_t{0U};
+        auto from_location_idx = location_idx_t{0U};
+        // TODO: meta stations? start_times.cc
+        for (auto footpath : footpaths_in) {
+          duration = footpath.duration();
+          from_location_idx = footpath.target();
+          is_dest_[from_location_idx.v_] = std::make_pair(true, duration);
+        }
+      }
+    }
+  }
+
   timetable const& tt_;
   tripbased_state& state_;
-  const std::vector<bool>& is_dest_;
+  std::vector<std::pair<bool, duration_t>> is_dest_;
   const nvec<std::uint32_t, transfer, 2>& transfers_;
   std::vector<std::vector<size_t>> first_locs_;
   size_t last_added_ = 0U;

@@ -15,6 +15,7 @@ struct trip_segment {
         from_idx_(from_idx),
         to_idx_(to_idx),
         n_transfers_(n_transfers) {
+    // for the first stations the previous index is -1
     prev_idx_ = -1;
   }
 
