@@ -1,5 +1,8 @@
 #pragma once
 
+#include "nigiri/common/delta_t.h"
+#include "nigiri/routing/journey.h"
+#include "nigiri/routing/pareto_set.h"
 #include "nigiri/routing/query.h"
 #include "nigiri/timetable.h"
 #include "nigiri/tripbased/fws_multimap.h"
@@ -14,6 +17,8 @@ struct timetable;
 }
 
 namespace nigiri::tripbased {
+
+using journey = nigiri::routing::journey;
 
 struct tripbased_stats {
   std::uint64_t n_trip_segments_visited_{0ULL};
@@ -39,8 +44,9 @@ struct tripbased {
   tripbased(timetable const& tt,
             tripbased_state& state,
             std::vector<bool>& is_dest,
-            nvec<std::uint32_t, transfer, 2>& transfers)
-      : tt_{tt}, state_{state}, transfers_{transfers} {
+            nvec<std::uint32_t, transfer, 2>& transfers,
+            day_idx_t const base)
+      : tt_{tt}, state_{state}, transfers_{transfers}, base_{base} {
     first_locs_.resize(2);
     first_locs_[0].resize(tt_.transport_to_trip_section_.size());
     utl::fill(first_locs_[0], 256U);
@@ -109,7 +115,10 @@ struct tripbased {
   }
 
   // EA query itself - main part of algorithm
-  void execute() {
+  void execute(unixtime_t const start_time,
+               std::uint8_t const max_transfers,
+               unixtime_t const worst_time_at_dest,
+               pareto_set<journey>& results) {
     auto abs_max_time = abs_q_mam_ + minutes_after_midnight_t{1440U};
     auto abs_min_time = abs_q_mam_ + minutes_after_midnight_t{1440U};
     while (last_seen_ != state_.segments_size()) {
@@ -118,6 +127,11 @@ struct tripbased {
         auto const curr_segment = get_segment(seg_idx);
         auto const seg_route_idx = tt_.transport_route_[curr_segment.t_idx()];
         auto const seg_stops = tt_.route_location_seq_[seg_route_idx];
+        // Absolute time on segment start
+        auto const [day_on_seg_start, mam_on_seg_start] = tt_.event_mam(
+            curr_segment.t_idx(), curr_segment.from(), event_type::kArr);
+        auto const abs_time_on_seg_start =
+            (q_day_ + curr_segment.on_query_day()) * 1440U + mam_on_seg_start;
         // Iterate through destination lines
         for (auto dest_line_idx = 0U; dest_line_idx < is_dest_line_.size();
              dest_line_idx++) {
@@ -134,13 +148,69 @@ struct tripbased {
           // If visiting --> Check if it improves arrival time
           auto const [day_on_target, mam_on_target] = tt_.event_mam(
               curr_segment.t_idx(), target_stop_idx, event_type::kArr);
-          auto const [day_on_seg_start, mam_on_seg_start] = tt_.event_mam(
-              curr_segment.t_idx(), curr_segment.from(), event_type::kArr);
           // Calculating absolute arrival time
           auto const abs_time_target =
               (q_day_ + curr_segment.on_query_day()) * 1440U +
-              mam_on_seg_start + (mam_on_target - mam_on_seg_start);
+              mam_on_seg_start + (mam_on_target - mam_on_seg_start) +
+              dest_footpath.count();
+          // Check if arrival time better than currently known
+          if (abs_time_target.v_ >= abs_min_time.count()) {
+            continue;
+          }
+          // Check if arrival time later than 24 hours after query start
+          // Yes --> go to next route
+          if (abs_time_target.v_ > abs_max_time.count()) {
+            continue;
+          }
+          // Update min known time at destination
+          abs_min_time = minutes_after_midnight_t{abs_time_target.v_};
+          // Add journey
+          // Note: if there is a footpath from a station with target_stop_idx to
+          // actual target station then it must be considered in reconstruction
+          // TODO: .dest_time in unix?
+          auto const [optimal, it, dominated_by] = results.add(journey{
+              .legs_ = {},
+              .start_time_ = start_time,
+              //.dest_time_ = delta_to_unix(abs_min_time.count() / 1440U,
+              //                            abs_min_time.count() % 1440U),
+              .dest_time_ = delta_to_unix(base(), abs_min_time.count()),
+              .dest_ = location_idx_t{seg_stops[target_stop_idx]},
+              .transfers_ =
+                  static_cast<std::uint8_t>(curr_segment.n_transfers())});
         }
+
+        // Transfers section
+        // Absolute time of the segment's next station from start
+        auto const [day_on_seg_stop_next, mam_on_seg_stop_next] = tt_.event_mam(
+            curr_segment.t_idx(), curr_segment.from() + 1U, event_type::kArr);
+        auto const abs_time_seq_stop_next =
+            abs_time_on_seg_start + (mam_on_seg_stop_next - mam_on_seg_start);
+        // Check if arrival is better than known on target
+        // And 24 Hours check
+        if (abs_time_on_seg_start >= abs_min_time.count() ||
+            abs_time_on_seg_start > abs_max_time.count()) {
+          last_seen_++;
+          continue;
+        }
+        // Iterating through segment's stops
+        for (auto seg_stop_idx = curr_segment.from() + 1U;
+             seg_stop_idx <= curr_segment.to(); seg_stop_idx++) {
+          // Iterate through transfers on this stop
+          // TODO: transfers are not possible from first stop
+          // therefore skip first stop?
+          for (auto transfer :
+               transfers_.at(curr_segment.t_idx().v_, seg_stop_idx)) {
+            auto const to_transport_idx = transfer.to();
+            auto const transfer_day_change = transfer.day_change();
+            auto const to_stop_idx = transfer.stop_idx();
+            // Check 24 Hours rule
+            //
+            // Check day to enqueue with
+            //
+            // Enqueue
+          }
+        }
+        last_seen_++;
       }
     }
     // TODO: possibly break or return something after run
@@ -153,7 +223,7 @@ private:
   void enqueue(route_idx_t r_idx,
                transport_idx_t t_idx,
                size_t stop_index,
-               size_t n_transfers,
+               uint8_t n_transfers,
                size_t day_idx) {
     if (stop_index < first_locs_[day_idx][t_idx.v_]) {
       auto const latest_loc = first_locs_[day_idx][t_idx.v_];
@@ -324,6 +394,12 @@ private:
     return 512U;
   }
 
+  date::sys_days base() const {
+    return tt_.internal_interval_days().from_ + as_int(base_) * date::days{1};
+  }
+
+  int as_int(day_idx_t const d) const { return static_cast<int>(d.v_); }
+
   timetable const& tt_;
   tripbased_state& state_;
   std::vector<std::pair<bool, duration_t>> is_dest_;
@@ -331,10 +407,11 @@ private:
   const nvec<std::uint32_t, transfer, 2>& transfers_;
   std::vector<std::vector<size_t>> first_locs_;
   size_t last_seen_ = 0U;
+  day_idx_t base_;
   minutes_after_midnight_t abs_q_mam_;
   day_idx_t q_day_;
   minutes_after_midnight_t q_mam_;
-  size_t n_transfers_;
+  uint8_t n_transfers_;
 };
 
 }  // namespace nigiri::tripbased
