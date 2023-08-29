@@ -28,6 +28,8 @@ struct tripbased_state {
     trip_segments_.push_back(new_segment);
   }
 
+  size_t segments_size() { return trip_segments_.size(); }
+
   void reset() { trip_segments_.resize(0); }
 };
 
@@ -55,9 +57,7 @@ struct tripbased {
     find_target_lines(is_dest);
   };
 
-  trip_segment& get_next_segment() {
-    return state_.trip_segments_[last_removed_];
-  }
+  trip_segment& get_next_segment() { return state_.trip_segments_[last_seen_]; }
 
   trip_segment& get_segment(size_t i) {
     if (i < state_.trip_segments_.size()) {
@@ -65,7 +65,7 @@ struct tripbased {
     }
     std::cout << "Trying to get a segment outside of range: "
               << state_.trip_segments_.size() << i << std::endl;
-    return state_.trip_segments_[last_removed_];
+    return state_.trip_segments_[last_seen_];
   }
 
   // Reset completely R(t)
@@ -109,7 +109,42 @@ struct tripbased {
   }
 
   // EA query itself - main part of algorithm
-  void execute() {}
+  void execute() {
+    auto abs_max_time = abs_q_mam_ + minutes_after_midnight_t{1440U};
+    auto abs_min_time = abs_q_mam_ + minutes_after_midnight_t{1440U};
+    while (last_seen_ != state_.segments_size()) {
+      // Iterate through segments
+      for (auto seg_idx = 0U; seg_idx < state_.segments_size(); seg_idx++) {
+        auto const curr_segment = get_segment(seg_idx);
+        auto const seg_route_idx = tt_.transport_route_[curr_segment.t_idx()];
+        auto const seg_stops = tt_.route_location_seq_[seg_route_idx];
+        // Iterate through destination lines
+        for (auto dest_line_idx = 0U; dest_line_idx < is_dest_line_.size();
+             dest_line_idx++) {
+          auto const [dest_stop_idx, dest_footpath] =
+              is_dest_line_[dest_line_idx];
+          // Skip if segment's line not visiting target
+          // Or if it's stop range doesn't contain target
+          auto const target_stop_idx =
+              contains_target(curr_segment.from() + 1U, seg_stops.size(),
+                              dest_stop_idx, route_idx_t{dest_line_idx});
+          if (seg_route_idx.v_ != dest_line_idx || target_stop_idx == 512U) {
+            continue;
+          }
+          // If visiting --> Check if it improves arrival time
+          auto const [day_on_target, mam_on_target] = tt_.event_mam(
+              curr_segment.t_idx(), target_stop_idx, event_type::kArr);
+          auto const [day_on_seg_start, mam_on_seg_start] = tt_.event_mam(
+              curr_segment.t_idx(), curr_segment.from(), event_type::kArr);
+          // Calculating absolute arrival time
+          auto const abs_time_target =
+              (q_day_ + curr_segment.on_query_day()) * 1440U +
+              mam_on_seg_start + (mam_on_target - mam_on_seg_start);
+        }
+      }
+    }
+    // TODO: possibly break or return something after run
+  }
 
   // Provide journeys in right format
   void reconstruct() {}
@@ -123,7 +158,7 @@ private:
     if (stop_index < first_locs_[day_idx][t_idx.v_]) {
       auto const latest_loc = first_locs_[day_idx][t_idx.v_];
       auto new_trip_segment =
-          trip_segment(t_idx, stop_index, latest_loc, n_transfers_);
+          trip_segment(t_idx, stop_index, latest_loc, n_transfers_, !day_idx);
       state_.add(new_trip_segment);
 
       auto const& transport_bitset =
@@ -180,7 +215,7 @@ private:
         }
 
         // Found a station that is the start station
-        // Iterate through trip of this route
+        // Iterate through trip of this route and find earliest
         auto const& transport_range = tt_.route_transport_ranges_[r_idx];
         auto ed_transport_idx = 8192U;
         auto ed_delta = delta{1024U, 1441U};
@@ -274,14 +309,28 @@ private:
     }
   }
 
+  // Checks if a range of route stops contains target station
+  // Multiple stations in one route considered
+  size_t contains_target(stop_idx_t from,
+                         stop_idx_t to,
+                         stop_idx_t target,
+                         route_idx_t route_idx) {
+    auto const route_stops = tt_.route_location_seq_[route_idx];
+    for (auto stop_idx = from; stop_idx <= to; stop_idx++) {
+      if (route_stops[stop_idx] == route_stops[target]) {
+        return stop_idx;
+      }
+    }
+    return 512U;
+  }
+
   timetable const& tt_;
   tripbased_state& state_;
   std::vector<std::pair<bool, duration_t>> is_dest_;
   std::vector<std::pair<uint32_t, duration_t>> is_dest_line_;
   const nvec<std::uint32_t, transfer, 2>& transfers_;
   std::vector<std::vector<size_t>> first_locs_;
-  size_t last_added_ = 0U;
-  size_t last_removed_ = 0U;
+  size_t last_seen_ = 0U;
   minutes_after_midnight_t abs_q_mam_;
   day_idx_t q_day_;
   minutes_after_midnight_t q_mam_;
