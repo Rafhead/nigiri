@@ -18,7 +18,8 @@ struct timetable;
 
 namespace nigiri::tripbased {
 
-using journey = nigiri::routing::journey;
+using journey = routing::journey;
+using query = routing::query;
 
 struct tripbased_stats {
   std::uint64_t n_trip_segments_visited_{0ULL};
@@ -238,7 +239,7 @@ struct tripbased {
   }
 
   // Provide journeys in right format
-  void reconstruct() {}
+  void reconstruct(query const& q, journey& j) {}
 
 private:
   // stop_index - stop in route sequence
