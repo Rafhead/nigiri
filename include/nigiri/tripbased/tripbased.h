@@ -63,15 +63,13 @@ struct tripbased {
     find_target_lines(is_dest);
   };
 
-  trip_segment& get_next_segment() { return state_.trip_segments_[last_seen_]; }
-
   trip_segment& get_segment(size_t i) {
     if (i < state_.trip_segments_.size()) {
       return state_.trip_segments_[i];
     }
     std::cout << "Trying to get a segment outside of range: "
               << state_.trip_segments_.size() << i << std::endl;
-    return state_.trip_segments_[last_seen_];
+    return state_.trip_segments_[state_.segments_size() - 1];
   }
 
   // Reset completely R(t)
@@ -121,96 +119,119 @@ struct tripbased {
                pareto_set<journey>& results) {
     auto abs_max_time = abs_q_mam_ + minutes_after_midnight_t{1440U};
     auto abs_min_time = abs_q_mam_ + minutes_after_midnight_t{1440U};
-    while (last_seen_ != state_.segments_size()) {
-      // Iterate through segments
-      for (auto seg_idx = 0U; seg_idx < state_.segments_size(); seg_idx++) {
-        auto const curr_segment = get_segment(seg_idx);
-        auto const seg_route_idx = tt_.transport_route_[curr_segment.t_idx()];
-        auto const seg_stops = tt_.route_location_seq_[seg_route_idx];
-        // Absolute time on segment start
-        auto const [day_on_seg_start, mam_on_seg_start] = tt_.event_mam(
-            curr_segment.t_idx(), curr_segment.from(), event_type::kArr);
-        auto const abs_time_on_seg_start =
-            (q_day_ + curr_segment.on_query_day()) * 1440U + mam_on_seg_start;
-        // Iterate through destination lines
-        for (auto dest_line_idx = 0U; dest_line_idx < is_dest_line_.size();
-             dest_line_idx++) {
-          auto const [dest_stop_idx, dest_footpath] =
-              is_dest_line_[dest_line_idx];
-          // Skip if segment's line not visiting target
-          // Or if it's stop range doesn't contain target
-          auto const target_stop_idx =
-              contains_target(curr_segment.from() + 1U, seg_stops.size(),
-                              dest_stop_idx, route_idx_t{dest_line_idx});
-          if (seg_route_idx.v_ != dest_line_idx || target_stop_idx == 512U) {
-            continue;
-          }
-          // If visiting --> Check if it improves arrival time
-          auto const [day_on_target, mam_on_target] = tt_.event_mam(
-              curr_segment.t_idx(), target_stop_idx, event_type::kArr);
-          // Calculating absolute arrival time
-          auto const abs_time_target =
-              (q_day_ + curr_segment.on_query_day()) * 1440U +
-              mam_on_seg_start + (mam_on_target - mam_on_seg_start) +
-              dest_footpath.count();
-          // Check if arrival time better than currently known
-          if (abs_time_target.v_ >= abs_min_time.count()) {
-            continue;
-          }
-          // Check if arrival time later than 24 hours after query start
-          // Yes --> go to next route
-          if (abs_time_target.v_ > abs_max_time.count()) {
-            continue;
-          }
-          // Update min known time at destination
-          abs_min_time = minutes_after_midnight_t{abs_time_target.v_};
-          // Add journey
-          // Note: if there is a footpath from a station with target_stop_idx to
-          // actual target station then it must be considered in reconstruction
-          // TODO: .dest_time in unix?
-          auto const [optimal, it, dominated_by] = results.add(journey{
-              .legs_ = {},
-              .start_time_ = start_time,
-              //.dest_time_ = delta_to_unix(abs_min_time.count() / 1440U,
-              //                            abs_min_time.count() % 1440U),
-              .dest_time_ = delta_to_unix(base(), abs_min_time.count()),
-              .dest_ = location_idx_t{seg_stops[target_stop_idx]},
-              .transfers_ =
-                  static_cast<std::uint8_t>(curr_segment.n_transfers())});
-        }
-
-        // Transfers section
-        // Absolute time of the segment's next station from start
-        auto const [day_on_seg_stop_next, mam_on_seg_stop_next] = tt_.event_mam(
-            curr_segment.t_idx(), curr_segment.from() + 1U, event_type::kArr);
-        auto const abs_time_seq_stop_next =
-            abs_time_on_seg_start + (mam_on_seg_stop_next - mam_on_seg_start);
-        // Check if arrival is better than known on target
-        // And 24 Hours check
-        if (abs_time_on_seg_start >= abs_min_time.count() ||
-            abs_time_on_seg_start > abs_max_time.count()) {
-          last_seen_++;
+    // Iterate through segments
+    for (auto seg_idx = 0U; seg_idx < state_.segments_size(); seg_idx++) {
+      auto const curr_segment = get_segment(seg_idx);
+      auto const seg_route_idx = tt_.transport_route_[curr_segment.t_idx()];
+      auto const seg_stops = tt_.route_location_seq_[seg_route_idx];
+      // Absolute time on segment start
+      auto const [day_on_seg_start, mam_on_seg_start] = tt_.event_mam(
+          curr_segment.t_idx(), curr_segment.from(), event_type::kArr);
+      auto const abs_time_on_seg_start =
+          (q_day_ + curr_segment.on_query_day()) * 1440U + mam_on_seg_start;
+      // Iterate through destination lines
+      for (auto dest_line_idx = 0U; dest_line_idx < is_dest_line_.size();
+           dest_line_idx++) {
+        auto const [dest_stop_idx, dest_footpath] =
+            is_dest_line_[dest_line_idx];
+        // Skip if segment's line not visiting target
+        // Or if it's stop range doesn't contain target
+        auto const target_stop_idx =
+            contains_target(curr_segment.from() + 1U, seg_stops.size(),
+                            dest_stop_idx, route_idx_t{dest_line_idx});
+        if (seg_route_idx.v_ != dest_line_idx || target_stop_idx == 512U) {
           continue;
         }
-        // Iterating through segment's stops
-        for (auto seg_stop_idx = curr_segment.from() + 1U;
-             seg_stop_idx <= curr_segment.to(); seg_stop_idx++) {
-          // Iterate through transfers on this stop
-          // TODO: transfers are not possible from first stop
-          // therefore skip first stop?
-          for (auto transfer :
-               transfers_.at(curr_segment.t_idx().v_, seg_stop_idx)) {
-            auto const to_transport_idx = transfer.to();
-            auto const transfer_day_change = transfer.day_change();
-            auto const to_stop_idx = transfer.stop_idx();
-            // Check 24 Hours rule
-            //
-            // Check day to enqueue with
-            //
-            // Enqueue
-          }
+        // If visiting --> Check if it improves arrival time
+        auto const [day_on_target, mam_on_target] = tt_.event_mam(
+            curr_segment.t_idx(), target_stop_idx, event_type::kArr);
+        // Calculating absolute arrival time
+        auto const abs_time_target =
+            (q_day_ + curr_segment.on_query_day()) * 1440U + mam_on_seg_start +
+            (mam_on_target - mam_on_seg_start) + dest_footpath.count();
+        // Check if arrival time better than currently known
+        if (abs_time_target.v_ >= abs_min_time.count()) {
+          continue;
         }
-        last_seen_++;
+        // Check if arrival time later than 24 hours after query start
+        // Yes --> go to next route
+        if (abs_time_target.v_ > abs_max_time.count()) {
+          continue;
+        }
+        // Update min known time at destination
+        abs_min_time = minutes_after_midnight_t{abs_time_target.v_};
+        // Add journey
+        // Note: if there is a footpath from a station with target_stop_idx to
+        // actual target station then it must be considered in reconstruction
+        // TODO: .dest_time in unix?
+        auto const [optimal, it, dominated_by] = results.add(
+            journey{.legs_ = {},
+                    .start_time_ = start_time,
+                    //.dest_time_ = delta_to_unix(abs_min_time.count() / 1440U,
+                    //                            abs_min_time.count() % 1440U),
+                    .dest_time_ = delta_to_unix(base(), abs_min_time.count()),
+                    .dest_ = location_idx_t{seg_stops[target_stop_idx]},
+                    .transfers_ =
+                        static_cast<std::uint8_t>(curr_segment.n_transfers())});
+      }
+
+      // Transfers section
+      // Absolute time of the segment's next station from start
+      auto const [day_on_seg_stop_next, mam_on_seg_stop_next] = tt_.event_mam(
+          curr_segment.t_idx(), curr_segment.from() + 1U, event_type::kArr);
+      auto const abs_time_seq_stop_next =
+          abs_time_on_seg_start + (mam_on_seg_stop_next - mam_on_seg_start);
+      // Check if arrival is better than known on target
+      // And 24 Hours check
+      if (abs_time_on_seg_start >= abs_min_time.count() ||
+          abs_time_on_seg_start > abs_max_time.count()) {
+        continue;
+      }
+      // Iterating through segment's stops
+      for (auto seg_stop_idx = curr_segment.from() + 1U;
+           seg_stop_idx <= curr_segment.to(); seg_stop_idx++) {
+        // Absolute time on the segment's stop
+        auto const [day_on_seg_stop, mam_on_seg_stop] =
+            tt_.event_mam(curr_segment.t_idx(), seg_stop_idx, event_type::kArr);
+        auto const abs_time_seq_stop =
+            abs_time_on_seg_start + (mam_on_seg_stop - mam_on_seg_start);
+        // Difference between first and current segment's stop in days
+        auto const seg_day_diff_on_stop =
+            mam_on_seg_stop / 1440U - mam_on_seg_start / 1440U;
+        if (seg_day_diff_on_stop >= 1 && !curr_segment.on_query_day()) {
+          std::cout << "Segment takes longer than one day to his next stop "
+                       "and segment starts on next query day"
+                    << std::endl;
+          break;
+        }
+        // Iterate through transfers on this stop
+        // Note: transfers are not possible from first stop therefore skip it
+        for (auto transfer :
+             transfers_.at(curr_segment.t_idx().v_, seg_stop_idx)) {
+          // Take n_transfers from current segment to be able to count it
+          auto const n_transfers = curr_segment.n_transfers() + 1U;
+          if (n_transfers > max_transfers) {
+            std::cout << "Max n_transfers reached" << std::endl;
+            break;
+          }
+          auto const to_transport_idx = transfer.to();
+          auto const to_stop_idx = transfer.stop_idx();
+          // Check 24 Hours rule
+          auto const [day_on_transfer_stop, mam_on_transfer_stop] =
+              tt_.event_mam(to_transport_idx, to_stop_idx, event_type::kDep);
+          auto const abs_transfer_day =
+              (q_day_ + curr_segment.on_query_day() + transfer.day_change());
+          auto const abs_time_on_transfer_stop =
+              (abs_transfer_day - day_on_transfer_stop) * 1440U +
+              mam_on_transfer_stop;
+          if (abs_time_on_transfer_stop.v_ > abs_max_time.count()) {
+            std::cout << "Transfer overflows 24 hours rule" << std::endl;
+            continue;
+          }
+          // Enqueue
+          enqueue(tt_.transport_route_[to_transport_idx], to_transport_idx,
+                  to_stop_idx, n_transfers, !(abs_transfer_day == q_day_));
+        }
       }
     }
     // TODO: possibly break or return something after run
@@ -220,6 +241,8 @@ struct tripbased {
   void reconstruct() {}
 
 private:
+  // stop_index - stop in route sequence
+  // day_idx = {0, 1} for query day and day + 1
   void enqueue(route_idx_t r_idx,
                transport_idx_t t_idx,
                size_t stop_index,
@@ -228,7 +251,7 @@ private:
     if (stop_index < first_locs_[day_idx][t_idx.v_]) {
       auto const latest_loc = first_locs_[day_idx][t_idx.v_];
       auto new_trip_segment =
-          trip_segment(t_idx, stop_index, latest_loc, n_transfers_, !day_idx);
+          trip_segment(t_idx, stop_index, latest_loc, n_transfers, !day_idx);
       state_.add(new_trip_segment);
 
       auto const& transport_bitset =
@@ -247,6 +270,7 @@ private:
         // TODO: Potentially count multiple same stations in route plan
         auto const [next_transport_day_at_stop, next_transport_mam_at_stop] =
             tt_.event_mam(transport, stop_index, event_type::kDep);
+        // TODO: check correctness
         if (next_transport_bitset.test(to_idx(
                 q_day_ - next_transport_day_at_stop + day_idx_t{day_idx})) &&
             next_transport_mam_at_stop >= mam_at_stop) {
@@ -348,7 +372,7 @@ private:
           is_dest_line_[route_from_loc.v_] =
               std::make_pair(stop_idx, duration_t{0U});
         }
-        // TODO: footpaths_in are footpath from other stations to this?
+        // Footpaths_in are footpath from other stations to this?
         auto const footpaths_in =
             tt_.locations_.get(location_idx_t{i}).footpaths_in_;
         auto duration = duration_t{0U};
@@ -402,11 +426,15 @@ private:
 
   timetable const& tt_;
   tripbased_state& state_;
+  // location_idx - true if target reachable from it and footpath duration.
+  // duration = 0 for the target itself
   std::vector<std::pair<bool, duration_t>> is_dest_;
+  // route_idx - his stop index and footpath duration with that target is
+  // reachable. Duration = 0 if trip visits the target directly
   std::vector<std::pair<uint32_t, duration_t>> is_dest_line_;
   const nvec<std::uint32_t, transfer, 2>& transfers_;
+  // R(t) - first known index of the trip's earliest found station
   std::vector<std::vector<size_t>> first_locs_;
-  size_t last_seen_ = 0U;
   day_idx_t base_;
   minutes_after_midnight_t abs_q_mam_;
   day_idx_t q_day_;

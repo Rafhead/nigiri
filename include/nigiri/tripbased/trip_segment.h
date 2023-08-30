@@ -47,6 +47,7 @@ private:
   size_t to_idx_;
   size_t prev_idx_;
   uint8_t n_transfers_;
+  // If trip segment is on query day on station from_idx
   bool on_query_day_;
 };
 }  // namespace nigiri::tripbased
