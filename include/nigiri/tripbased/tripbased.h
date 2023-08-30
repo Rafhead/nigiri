@@ -6,6 +6,7 @@
 #include "nigiri/routing/query.h"
 #include "nigiri/timetable.h"
 #include "nigiri/tripbased/fws_multimap.h"
+#include "nigiri/tripbased/reconstruct.h"
 #include "nigiri/tripbased/transfer.h"
 #include "nigiri/tripbased/trip_segment.h"
 #include "nigiri/types.h"
@@ -98,6 +99,7 @@ struct tripbased {
     auto const [day, mam] = tt_.day_idx_mam(t);
     q_day_ = day;
     q_mam_ = mam;
+    // TODO: check if 16 bit value types can fit the whole absolute time
     abs_q_mam_ = minutes_after_midnight_t{day.v_ * 1440U} + mam;
     std::cout << "Time on first station " << l << " is " << abs_q_mam_
               << std::endl;
@@ -239,7 +241,9 @@ struct tripbased {
   }
 
   // Provide journeys in right format
-  void reconstruct(query const& q, journey& j) {}
+  void reconstruct(query const& q, journey& j) {
+    reconstruct_journey(tt_, q, state_, j);
+  }
 
 private:
   // stop_index - stop in route sequence
