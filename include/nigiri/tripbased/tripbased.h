@@ -293,7 +293,8 @@ struct tripbased {
           }
           // Enqueue
           enqueue(tt_.transport_route_[to_transport_idx], to_transport_idx,
-                  to_stop_idx, n_transfers, !(abs_transfer_day == q_day_));
+                  to_stop_idx, seg_idx, seg_stop_idx, n_transfers,
+                  !(abs_transfer_day == q_day_));
         }
       }
     }
@@ -302,7 +303,7 @@ struct tripbased {
 
   // Provide journeys in right format
   void reconstruct(query const& q, journey& j) {
-    reconstruct_journey(tt_, q, state_, is_dest_, j);
+    reconstruct_journey(tt_, q, q_day_, state_, is_dest_, j);
   }
 
 private:
@@ -310,13 +311,16 @@ private:
   // day_idx = {0, 1} for query day and day + 1
   void enqueue(route_idx_t r_idx,
                transport_idx_t t_idx,
-               size_t stop_index,
+               stop_idx_t stop_index,
+               size_t prev_idx,
+               stop_idx_t prev_stop_idx,
                uint8_t n_transfers,
                size_t day_idx) {
     if (stop_index < first_locs_[day_idx][t_idx.v_]) {
       auto const latest_loc = first_locs_[day_idx][t_idx.v_];
       auto new_trip_segment =
-          trip_segment(t_idx, stop_index, latest_loc, n_transfers, !day_idx);
+          trip_segment(t_idx, stop_index, latest_loc, prev_idx, prev_stop_idx,
+                       n_transfers, !day_idx);
       state_.add(new_trip_segment);
 
       auto const& transport_bitset =
@@ -409,7 +413,7 @@ private:
 
         // If trip for this route was found
         if (ed_transport_idx != 8192U) {
-          enqueue(r_idx, transport_idx_t{ed_transport_idx}, i, 0,
+          enqueue(r_idx, transport_idx_t{ed_transport_idx}, i, 0U, 0U, 0,
                   trip_on_the_next_day);
         }
       }
@@ -509,7 +513,7 @@ private:
   std::vector<std::pair<uint32_t, duration_t>> is_dest_line_;
   const nvec<std::uint32_t, transfer, 2>& transfers_;
   // R(t) - first known index of the trip's earliest found station
-  std::vector<std::vector<size_t>> first_locs_;
+  std::vector<std::vector<stop_idx_t>> first_locs_;
   day_idx_t base_;
   minutes_after_midnight_t abs_q_mam_;
   day_idx_t q_day_;

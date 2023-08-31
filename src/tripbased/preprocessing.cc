@@ -54,9 +54,10 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
         // To store transfers for a trip and for his unique stop
         vector<transfer> transfers_from = vector<transfer>();
         auto const location_from_idx = location_from_seq[stop_from_idx];
-        transport_from_mam =
+        transport_from_mam = minutes_after_midnight_t{
             tt.event_mam(route_idx_t{route_from_idx_}, transport_from_idx,
-                         location_from_idx, event_type::kArr);
+                         location_from_idx, event_type::kArr)
+                .mam()};
         transport_from_bf_idx = tt.transport_traffic_days_[transport_from_idx];
         update_time(arrival_times, location_idx_t{location_from_idx},
                     transport_from_mam % 1440,
@@ -75,10 +76,10 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
             location_to_idx = location_idx_t{location_from_idx};
             footpath_duration = duration_t{0U};
           } else {
-            location_to_idx =
-                location_footpaths_from.at(footpath_from_idx).target_;
-            footpath_duration =
-                location_footpaths_from.at(footpath_from_idx).duration_;
+            location_to_idx = location_idx_t{
+                location_footpaths_from.at(footpath_from_idx).target_};
+            footpath_duration = duration_t{
+                location_footpaths_from.at(footpath_from_idx).duration_};
           }
           day_change = false;
           // Get mam for the trip from and add footpath
@@ -129,7 +130,9 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                 it_range{std::lower_bound(
                              location_to_event_times.begin(),
                              location_to_event_times.end(), mam_at_stop_from,
-                             [&](auto&& a, auto&& b) { return a < b; }),
+                             [&](auto&& a, auto&& b) {
+                               return minutes_after_midnight_t{a.mam()} < b;
+                             }),
                          location_to_event_times.end()};
             // TODO: iterator belongs to the earliest time on
             // station based on the arrival time?
@@ -180,17 +183,24 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                 auto const transport_from_prev_mam = tt.event_mam(
                     route_idx_t{route_from_idx_}, transport_from_idx,
                     stop_from_idx - 1, event_type::kArr);
-                auto const day_diff = (transport_from_mam / 1440) -
-                                      (transport_from_prev_mam / 1440);
+                auto const day_diff =
+                    (transport_from_mam / 1440U) -
+                    (minutes_after_midnight_t{transport_from_prev_mam.mam()} /
+                     1440U);
                 auto const transport_from_bf_cc_m_idx = get_bitfield_idx(
-                    transport_from_bf >>
-                        (transport_from_prev_mam / 1440).count(),
+                    transport_from_bf >> (minutes_after_midnight_t{
+                                              transport_from_prev_mam.mam()} /
+                                          1440U)
+                                             .count(),
                     tt);
                 auto next_c = false;
                 auto const change_time =
                     tt.locations_
                         .transfer_time_[location_idx_t{location_from_idx}];
-                if ((transport_from_prev_mam + change_time).count() / 1440 !=
+                if ((minutes_after_midnight_t{transport_from_prev_mam.mam()} +
+                     change_time)
+                            .count() /
+                        1440 !=
                     transport_from_prev_mam.count() / 1440) {
                   next_c = true;
                 }
@@ -200,7 +210,10 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                     tt.event_mam(route_to_idx, transport_to_idx,
                                  stop_to_idx + 1, event_type::kDep);
                 //(ea_time - 2 * route_to_n_transports)->count();
-                if ((transport_from_prev_mam + change_time).count() % 1440 >
+                if ((minutes_after_midnight_t{transport_from_prev_mam.mam()} +
+                     change_time)
+                            .count() %
+                        1440 >
                     location_to_next_mam.count() % 1440) {
                   next_c = true;
                 }
@@ -245,7 +258,9 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                 }
                 keep |= tt.bitfields_[update_time(
                     arrival_times, location_idx_t{*next_locs},
-                    *(ea_time + (next_locs - location_to_pos_it)) % 1440,
+                    minutes_after_midnight_t{
+                        (*(ea_time + (next_locs - location_to_pos_it))).mam()} %
+                        1440,
                     transfer_bf, day_change, tt)];
                 // Iter through footpaths
                 auto const next_locs_foot =
@@ -255,13 +270,14 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                      ++next_locs_to_idx) {
                   day_change_footpath = day_change;
                   auto const arr_to_time =
-                      (*ea_time +
-                       next_locs_foot.at(next_locs_to_idx).duration_) %
+                      (minutes_after_midnight_t{(*ea_time).mam()} +
+                       next_locs_foot.at(next_locs_to_idx).duration()) %
                       1440;
                   // 24 hours check
                   if (footpath_duration.count() % 1440 + loc_after_arr.count() +
                           next_locs_foot.at(next_locs_to_idx)
-                              .duration_.count() -
+                              .duration()
+                              .count() -
                           loc_first_arr.count() >
                       1440) {
                     continue;
@@ -270,18 +286,18 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                   // check if footpath makes day change
                   if (!day_change_footpath &&
                       (loc_after_arr.count() +
-                       next_locs_foot.at(next_locs_to_idx).duration_.count()) %
+                       next_locs_foot.at(next_locs_to_idx).duration().count()) %
                               1440 <=
                           mam_at_stop_from.count()) {
                     day_change_footpath = 1;
                   }
                   keep |= tt.bitfields_[update_time(
                       arrival_times,
-                      next_locs_foot.at(next_locs_to_idx).target_, arr_to_time,
+                      next_locs_foot.at(next_locs_to_idx).target(), arr_to_time,
                       transfer_bf, day_change_footpath, tt)];
                   keep |= tt.bitfields_[update_time(
                       ea_change_times,
-                      next_locs_foot.at(next_locs_to_idx).target_, arr_to_time,
+                      next_locs_foot.at(next_locs_to_idx).target(), arr_to_time,
                       transfer_bf, day_change_footpath, tt)];
                 }
               }
@@ -324,6 +340,7 @@ bitfield_idx_t update_time(
   if (times[l_idx].empty()) {
     // insert
     times[l_idx].emplace_back(new_time_on_l, bf_cpy);
+    return get_bitfield_idx(bf_cpy, tt);
   } else {
     auto equal = false;
     auto improve = cista::bitset<512>();
