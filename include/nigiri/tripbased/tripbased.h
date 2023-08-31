@@ -500,6 +500,7 @@ private:
   tripbased_state& state_;
   // location_idx - location_idx_t of target reachable from it and footpath
   // duration = 0 for the target itself
+  // TODO: adapt to case when same station has footpath to many targets
   std::vector<std::pair<location_idx_t, duration_t>> is_dest_;
   // route_idx - his stop index and footpath duration with that target is
   // reachable. Duration = 0 if trip visits the target directly
