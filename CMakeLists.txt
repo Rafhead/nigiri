@@ -79,7 +79,8 @@ endif ()
 # --- LIB ---
 file(GLOB_RECURSE nigiri-files src/*.cc)
 add_library(nigiri ${nigiri-files} include/nigiri/tripbased/fws_multimap.h include/nigiri/tripbased/vector.h include/nigiri/tripbased/data.h include/nigiri/tripbased/preprocessing.h src/tripbased/preprocessing.cc
-        include/nigiri/tripbased/trip_segment.h)
+        include/nigiri/tripbased/trip_segment.h
+        src/tripbased/reconsctruct.cc)
 target_include_directories(nigiri PUBLIC include)
 target_link_libraries(nigiri PUBLIC cista geo utl fmt date miniz date-tz wyhash unordered_dense gtfsrt)
 target_compile_features(nigiri PUBLIC cxx_std_23)

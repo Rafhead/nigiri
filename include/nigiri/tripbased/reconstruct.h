@@ -13,9 +13,11 @@ struct tripbased_state;
 using query = nigiri::routing::query;
 using journey = nigiri::routing::journey;
 
-void reconstruct_journey(timetable const&,
-                         query const&,
-                         tripbased_state const&,
-                         journey&){};
+void reconstruct_journey(
+    timetable const& tt,
+    query const& q,
+    tripbased_state const& state,
+    std::vector<std::pair<location_idx_t, duration_t>> const& is_dest,
+    journey& j);
 
 }  // namespace nigiri::tripbased

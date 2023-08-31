@@ -22,6 +22,27 @@ namespace nigiri::tripbased {
 using journey = routing::journey;
 using query = routing::query;
 
+struct best_on_target {
+  size_t segment_idx_;
+  // day on first stop
+  day_idx_t day_;
+  // stop from which target was reached
+  stop_idx_t stop_idx_;
+  unixtime_t start_time_;
+  unixtime_t abs_time_on_target_;
+  uint8_t n_transfers_;
+
+  bool dominates(best_on_target const& o) const {
+    if (start_time_ <= abs_time_on_target_) {
+      return n_transfers_ <= o.n_transfers_ && start_time_ >= o.start_time_ &&
+             abs_time_on_target_ <= o.abs_time_on_target_;
+    } else {
+      return n_transfers_ <= o.n_transfers_ && start_time_ <= o.start_time_ &&
+             abs_time_on_target_ >= o.abs_time_on_target_;
+    }
+  }
+};
+
 struct tripbased_stats {
   std::uint64_t n_trip_segments_visited_{0ULL};
   std::uint64_t n_footpaths_visited_{0ULL};
@@ -29,8 +50,7 @@ struct tripbased_stats {
 };
 
 struct tripbased_state {
-  std::vector<trip_segment> trip_segments_;
-
+public:
   void add(trip_segment const& new_segment) {
     trip_segments_.push_back(new_segment);
   }
@@ -38,6 +58,17 @@ struct tripbased_state {
   size_t segments_size() { return trip_segments_.size(); }
 
   void reset() { trip_segments_.resize(0); }
+
+  void add_best(best_on_target const& b) {
+    for (auto best : best_) {
+      if (b.dominates(best)) {
+        best.day_ = day_idx_t::invalid();
+      }
+    }
+  }
+
+  std::vector<best_on_target> best_;
+  std::vector<trip_segment> trip_segments_;
 };
 
 struct tripbased {
@@ -60,7 +91,8 @@ struct tripbased {
 
     is_dest_.resize(tt_.n_locations());
     is_dest_line_.resize(tt_.n_routes());
-    utl::fill(is_dest_, std::make_pair(false, duration_t{0U}));
+    utl::fill(is_dest_,
+              std::make_pair(location_idx_t::invalid(), duration_t{0U}));
     utl::fill(is_dest_line_, std::make_pair(0U, duration_t{0}));
     find_target_lines(is_dest);
   };
@@ -127,11 +159,16 @@ struct tripbased {
       auto const curr_segment = get_segment(seg_idx);
       auto const seg_route_idx = tt_.transport_route_[curr_segment.t_idx()];
       auto const seg_stops = tt_.route_location_seq_[seg_route_idx];
-      // Absolute time on segment start
+      // Day difference between segment's first stop and first stop of route
+      auto const [day_on_r_start, mam_at_r_start] =
+          tt_.event_mam(curr_segment.t_idx(), 0U, event_type::kDep);
       auto const [day_on_seg_start, mam_on_seg_start] = tt_.event_mam(
           curr_segment.t_idx(), curr_segment.from(), event_type::kArr);
+      auto const day_diff = day_on_seg_start - day_on_r_start;
+      // Absolute time on segment start
       auto const abs_time_on_seg_start =
-          (q_day_ + curr_segment.on_query_day()) * 1440U + mam_on_seg_start;
+          (q_day_ + curr_segment.on_query_day() - day_diff) * 1440U +
+          mam_on_seg_start;
       // Iterate through destination lines
       for (auto dest_line_idx = 0U; dest_line_idx < is_dest_line_.size();
            dest_line_idx++) {
@@ -149,9 +186,9 @@ struct tripbased {
         auto const [day_on_target, mam_on_target] = tt_.event_mam(
             curr_segment.t_idx(), target_stop_idx, event_type::kArr);
         // Calculating absolute arrival time
-        auto const abs_time_target =
-            (q_day_ + curr_segment.on_query_day()) * 1440U + mam_on_seg_start +
-            (mam_on_target - mam_on_seg_start) + dest_footpath.count();
+        auto const abs_time_target = abs_time_on_seg_start +
+                                     (mam_on_target - mam_on_seg_start) +
+                                     dest_footpath.count();
         // Check if arrival time better than currently known
         if (abs_time_target.v_ >= abs_min_time.count()) {
           continue;
@@ -167,15 +204,37 @@ struct tripbased {
         // Note: if there is a footpath from a station with target_stop_idx to
         // actual target station then it must be considered in reconstruction
         // TODO: .dest_time in unix?
-        auto const [optimal, it, dominated_by] = results.add(
-            journey{.legs_ = {},
-                    .start_time_ = start_time,
-                    //.dest_time_ = delta_to_unix(abs_min_time.count() / 1440U,
-                    //                            abs_min_time.count() % 1440U),
-                    .dest_time_ = delta_to_unix(base(), abs_min_time.count()),
-                    .dest_ = location_idx_t{seg_stops[target_stop_idx]},
-                    .transfers_ =
-                        static_cast<std::uint8_t>(curr_segment.n_transfers())});
+        auto const transport = nigiri::transport{
+            .t_idx_ = curr_segment.t_idx(),
+            .day_ = q_day_ + curr_segment.on_query_day() - day_diff,
+        };
+        auto const [optimal, it, dominated_by] = results.add(journey{
+            .legs_ = {},
+            .start_time_ = start_time,
+            //.dest_time_ = delta_to_unix(abs_min_time.count() / 1440U,
+            //                            abs_min_time.count() % 1440U),
+            //.dest_time_ = delta_to_unix(base(), abs_min_time.count()),
+            .dest_time_ =
+                tt_.to_unixtime(q_day_ + curr_segment.on_query_day() - day_diff,
+                                minutes_after_midnight_t{
+                                    mam_on_target + dest_footpath.count()}),
+            .dest_ = location_idx_t{seg_stops[target_stop_idx]},
+            .transfers_ =
+                static_cast<std::uint8_t>(curr_segment.n_transfers())});
+        if (optimal) {
+          auto new_best = best_on_target{
+              .segment_idx_ = seg_idx,
+              .day_ = q_day_ + curr_segment.on_query_day() - day_diff,
+              .stop_idx_ = target_stop_idx,
+              .start_time_ = start_time,
+              .abs_time_on_target_ = tt_.to_unixtime(
+                  q_day_ + curr_segment.on_query_day() - day_diff,
+                  minutes_after_midnight_t{mam_on_target +
+                                           dest_footpath.count()}),
+              .n_transfers_ =
+                  static_cast<std::uint8_t>(curr_segment.n_transfers())};
+          state_.add_best(new_best);
+        }
       }
 
       // Transfers section
@@ -224,6 +283,7 @@ struct tripbased {
               tt_.event_mam(to_transport_idx, to_stop_idx, event_type::kDep);
           auto const abs_transfer_day =
               (q_day_ + curr_segment.on_query_day() + transfer.day_change());
+          // TODO: check correctness with days
           auto const abs_time_on_transfer_stop =
               (abs_transfer_day - day_on_transfer_stop) * 1440U +
               mam_on_transfer_stop;
@@ -242,7 +302,7 @@ struct tripbased {
 
   // Provide journeys in right format
   void reconstruct(query const& q, journey& j) {
-    reconstruct_journey(tt_, q, state_, j);
+    reconstruct_journey(tt_, q, state_, is_dest_, j);
   }
 
 private:
@@ -377,7 +437,8 @@ private:
           is_dest_line_[route_from_loc.v_] =
               std::make_pair(stop_idx, duration_t{0U});
         }
-        // Footpaths_in are footpath from other stations to this?
+        // Footpaths_in are footpath from other stations to this
+        // For stations that reach target station using footpath
         auto const footpaths_in =
             tt_.locations_.get(location_idx_t{i}).footpaths_in_;
         auto duration = duration_t{0U};
@@ -386,7 +447,8 @@ private:
         for (auto footpath : footpaths_in) {
           duration = footpath.duration();
           from_loc_idx = footpath.target();
-          is_dest_[from_loc_idx.v_] = std::make_pair(true, duration);
+          is_dest_[from_loc_idx.v_] =
+              std::make_pair(location_idx_t{i}, duration);
           // Iterate through routes of this location
           routes_from_loc = tt_.location_routes_[from_loc_idx];
           for (auto route_from_loc : routes_from_loc) {
@@ -400,8 +462,13 @@ private:
                 break;
               }
             }
-            is_dest_line_[route_from_loc.v_] =
-                std::make_pair(stop_idx, duration);
+            // If previously the line didn't visit target directly
+            // Or if new footpath is shorter
+            if (is_dest_line_[route_from_loc.v_].first == 0U ||
+                duration < is_dest_line_[route_from_loc.v_].second) {
+              is_dest_line_[route_from_loc.v_] =
+                  std::make_pair(stop_idx, duration);
+            }
           }
         }
       }
@@ -410,10 +477,10 @@ private:
 
   // Checks if a range of route stops contains target station
   // Multiple stations in one route considered
-  size_t contains_target(stop_idx_t from,
-                         stop_idx_t to,
-                         stop_idx_t target,
-                         route_idx_t route_idx) {
+  stop_idx_t contains_target(stop_idx_t from,
+                             stop_idx_t to,
+                             stop_idx_t target,
+                             route_idx_t route_idx) {
     auto const route_stops = tt_.route_location_seq_[route_idx];
     for (auto stop_idx = from; stop_idx <= to; stop_idx++) {
       if (route_stops[stop_idx] == route_stops[target]) {
@@ -431,11 +498,13 @@ private:
 
   timetable const& tt_;
   tripbased_state& state_;
-  // location_idx - true if target reachable from it and footpath duration.
+  // location_idx - location_idx_t of target reachable from it and footpath
   // duration = 0 for the target itself
-  std::vector<std::pair<bool, duration_t>> is_dest_;
+  std::vector<std::pair<location_idx_t, duration_t>> is_dest_;
   // route_idx - his stop index and footpath duration with that target is
   // reachable. Duration = 0 if trip visits the target directly
+  // TODO: adapt to case when multiple route stops visit target by using
+  // footpath
   std::vector<std::pair<uint32_t, duration_t>> is_dest_line_;
   const nvec<std::uint32_t, transfer, 2>& transfers_;
   // R(t) - first known index of the trip's earliest found station
