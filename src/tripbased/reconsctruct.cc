@@ -60,8 +60,8 @@ void reconstruct_journey(
     // Recursively construct legs by looking on prev segment_idx
     // tt + transport struct gives unix time
     // Each iteration adds footpath as:
-    // - duration to wait for next trip in journey
-    // - or duration to
+    // - duration to wait for next trip in journey at the same station
+    // - or duration to change the stations
     while (seg.prev_stop_idx() != 0U) {
       auto prev_seg = state.trip_segments_[seg.prev_idx()];
       auto prev_seg_route_idx = tt.transport_route_[prev_seg.t_idx()];
@@ -81,11 +81,11 @@ void reconstruct_journey(
           tt.event_time(prev_seg_transport, prev_seg.from(), event_type::kDep);
 
       // Adding footpath
-      auto const transfer_footpath_dur = footpath(
+      auto const transfer_footpath = footpath(
           seg_from_l_idx, duration_t{prev_seg_arr_time - seg_dep_time_from});
       j.add(journey::leg{direction::kForward, prev_to_l_idx, seg_l_idx,
                          prev_seg_arr_time, seg_dep_time_from,
-                         transfer_footpath_dur});
+                         transfer_footpath});
       j.add(journey::leg{
           direction::kForward, prev_from_l_idx, prev_to_l_idx,
           prev_seg_arr_time, seg_dep_time_from,
@@ -95,6 +95,12 @@ void reconstruct_journey(
                    interval<stop_idx_t>{prev_seg.from(), prev_seg.to()}},
               prev_seg.from(), prev_seg.to())});
       seg = prev_seg;
+      seg_route_idx = tt.transport_route_[seg.t_idx()];
+      seg_stops = tt.route_location_seq_[seg_route_idx];
+      seg_l_idx = location_idx_t{seg_stops[seg.from()]};
+      seg_transport = prev_seg_transport;
+      seg_dep_time_from =
+          tt.event_time(seg_transport, seg.from(), event_type::kDep);
     }
 
     // TODO: Ensure start footpath added properly if needed

@@ -102,7 +102,8 @@ struct tripbased {
       return state_.trip_segments_[i];
     }
     std::cout << "Trying to get a segment outside of range: "
-              << state_.trip_segments_.size() << i << std::endl;
+              << state_.trip_segments_.size() << ", but searched for " << i
+              << std::endl;
     return state_.trip_segments_[state_.segments_size() - 1];
   }
 
@@ -441,6 +442,7 @@ private:
           is_dest_line_[route_from_loc.v_] =
               std::make_pair(stop_idx, duration_t{0U});
         }
+
         // Footpaths_in are footpath from other stations to this
         // For stations that reach target station using footpath
         auto const footpaths_in =
@@ -453,7 +455,7 @@ private:
           from_loc_idx = footpath.target();
           is_dest_[from_loc_idx.v_] =
               std::make_pair(location_idx_t{i}, duration);
-          // Iterate through routes of this location
+          // Iterate through routes of location that reaches tgt with footpath
           routes_from_loc = tt_.location_routes_[from_loc_idx];
           for (auto route_from_loc : routes_from_loc) {
             auto stop_idx = 0U;
