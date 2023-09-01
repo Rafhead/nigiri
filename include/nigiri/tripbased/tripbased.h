@@ -132,7 +132,8 @@ struct tripbased {
     q_day_ = day;
     q_mam_ = mam;
     // TODO: check if 16 bit value types can fit the whole absolute time
-    abs_q_mam_ = minutes_after_midnight_t{day.v_ * 1440U} + mam;
+    // abs_q_mam_ = minutes_after_midnight_t{day.v_ * 1440U} + mam;
+    abs_q_mam_ = tt_.to_unixtime(day, mam);
     std::cout << "Time on first station " << l << " is " << abs_q_mam_
               << std::endl;
 
@@ -379,33 +380,30 @@ private:
         // Iterate through trip of this route and find earliest
         auto const& transport_range = tt_.route_transport_ranges_[r_idx];
         auto ed_transport_idx = transport_idx_t::invalid();
-        auto ed_delta = delta{1024U, 1441U};
+        // Absolute max time as query time + 24 hours
+        // Will not allow trips that start later than 24 hours after query start
+        auto abs_ed_time = tt_.to_unixtime(q_day_ + day_idx_t{1U}, q_mam_);
         auto trip_on_the_next_day = 0U;
         for (auto const transport : transport_range) {
           auto const& transport_bitset =
               tt_.bitfields_[tt_.transport_traffic_days_[transport]];
           auto const [day_at_stop, mam_at_stop] =
               tt_.event_mam(transport, i, event_type::kDep);
-          // If trip is active:
-          // 1. On the query day  &&   mam of trip later than query mam
-          // 2. On the next day   &&   mam of trip earlier that query mam &&
-          //                           footpath doesn't make day change
-          auto const transport_delta = delta{day_at_stop, mam_at_stop};
-          if (transport_bitset.test(to_idx(q_day_ - day_at_stop)) &&
-              mam_at_stop % 1440U >= mam_to_target.count() % 1440U &&
-              transport_delta < ed_delta) {
-            ed_transport_idx = transport;
-            ed_delta = transport_delta;
-            trip_on_the_next_day = 0U;
-            continue;
-          }
-          if (!day_change &&
-              transport_bitset.test(to_idx(q_day_ + 1U - day_at_stop)) &&
-              mam_at_stop % 1440U < mam_to_target.count() % 1440U &&
-              transport_delta < ed_delta) {
-            ed_transport_idx = transport;
-            ed_delta = transport_delta;
-            trip_on_the_next_day = 1U;
+          // Check trips on the current day and day + 1
+          // If footpath makes day change then only look at day + 1
+          for (auto day_offset = day_idx_t{day_change}; day_offset < 2;
+               day_offset++) {
+            auto const is_active = transport_bitset.test(
+                to_idx(q_day_ + day_offset - day_at_stop));
+            auto const abs_dep_time = tt_.to_unixtime(
+                q_day_ + day_offset, minutes_after_midnight_t{mam_at_stop});
+            if (is_active && abs_dep_time < abs_ed_time) {
+              ed_transport_idx = transport;
+              abs_ed_time = abs_dep_time;
+              if (day_offset > 0) {
+                trip_on_the_next_day = 1U;
+              }
+            }
           }
         }
 
@@ -467,6 +465,7 @@ private:
             }
             // If previously the line didn't visit target directly
             // Or if new footpath is shorter
+            // Currently only minimal footpath stored what is not optimal
             if (is_dest_line_[route_from_loc.v_].first == 0U ||
                 duration < is_dest_line_[route_from_loc.v_].second) {
               is_dest_line_[route_from_loc.v_] =
@@ -509,7 +508,7 @@ private:
   const nvec<std::uint32_t, transfer, 2>& transfers_;
   // R(t) - first known index of the trip's earliest found station
   std::vector<std::vector<stop_idx_t>> first_locs_;
-  minutes_after_midnight_t abs_q_mam_;
+  unixtime_t abs_q_mam_;
   day_idx_t q_day_;
   minutes_after_midnight_t q_mam_;
   uint8_t n_transfers_;
