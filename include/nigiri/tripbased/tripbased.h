@@ -161,6 +161,8 @@ struct tripbased {
       auto const seg_route_idx = tt_.transport_route_[curr_segment.t_idx()];
       auto const seg_stops = tt_.route_location_seq_[seg_route_idx];
       // Day difference between segment's first stop and first stop of route
+      // Needed due to on_query_day property is stored relative to first
+      // segment's stop, not relative to the first route's station
       auto const [day_on_r_start, mam_at_r_start] =
           tt_.event_mam(curr_segment.t_idx(), 0U, event_type::kDep);
       auto const [day_on_seg_start, mam_on_seg_start] = tt_.event_mam(
@@ -170,9 +172,12 @@ struct tripbased {
       auto const abs_time_on_seg_start =
           (q_day_ + curr_segment.on_query_day() - day_diff) * 1440U +
           mam_on_seg_start;
+
       // Iterate through destination lines
       for (auto dest_line_idx = 0U; dest_line_idx < is_dest_line_.size();
            dest_line_idx++) {
+        // TODO: count case when a line visits more than one stop that is
+        // target/that reaches target with footpath
         auto const [dest_stop_idx, dest_footpath] =
             is_dest_line_[dest_line_idx];
         // Skip if segment's line not visiting target
@@ -204,17 +209,9 @@ struct tripbased {
         // Add journey
         // Note: if there is a footpath from a station with target_stop_idx to
         // actual target station then it must be considered in reconstruction
-        // TODO: .dest_time in unix?
-        auto const transport = nigiri::transport{
-            .t_idx_ = curr_segment.t_idx(),
-            .day_ = q_day_ + curr_segment.on_query_day() - day_diff,
-        };
         auto const [optimal, it, dominated_by] = results.add(journey{
             .legs_ = {},
             .start_time_ = start_time,
-            //.dest_time_ = delta_to_unix(abs_min_time.count() / 1440U,
-            //                            abs_min_time.count() % 1440U),
-            //.dest_time_ = delta_to_unix(base(), abs_min_time.count()),
             .dest_time_ =
                 tt_.to_unixtime(q_day_ + curr_segment.on_query_day() - day_diff,
                                 minutes_after_midnight_t{
@@ -378,10 +375,11 @@ private:
           continue;
         }
 
-        // Found a station that is the start station
+        // Found a station that is the start station or start reachable with
+        // footpath.
         // Iterate through trip of this route and find earliest
         auto const& transport_range = tt_.route_transport_ranges_[r_idx];
-        auto ed_transport_idx = 8192U;
+        auto ed_transport_idx = transport_idx_t::invalid();
         auto ed_delta = delta{1024U, 1441U};
         auto trip_on_the_next_day = 0U;
         for (auto const transport : transport_range) {
@@ -397,7 +395,7 @@ private:
           if (transport_bitset.test(to_idx(q_day_ - day_at_stop)) &&
               mam_at_stop % 1440U >= mam_to_target.count() % 1440U &&
               transport_delta < ed_delta) {
-            ed_transport_idx = transport.v_;
+            ed_transport_idx = transport;
             ed_delta = transport_delta;
             trip_on_the_next_day = 0U;
             continue;
@@ -406,14 +404,14 @@ private:
               transport_bitset.test(to_idx(q_day_ + 1U - day_at_stop)) &&
               mam_at_stop % 1440U < mam_to_target.count() % 1440U &&
               transport_delta < ed_delta) {
-            ed_transport_idx = transport.v_;
+            ed_transport_idx = transport;
             ed_delta = transport_delta;
             trip_on_the_next_day = 1U;
           }
         }
 
         // If trip for this route was found
-        if (ed_transport_idx != 8192U) {
+        if (ed_transport_idx != transport_idx_t::invalid()) {
           enqueue(r_idx, transport_idx_t{ed_transport_idx}, i, 0U, 0U, 0,
                   trip_on_the_next_day);
         }
