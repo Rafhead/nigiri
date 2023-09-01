@@ -77,9 +77,8 @@ struct tripbased {
   tripbased(timetable const& tt,
             tripbased_state& state,
             std::vector<bool>& is_dest,
-            nvec<std::uint32_t, transfer, 2>& transfers,
-            day_idx_t const base)
-      : tt_{tt}, state_{state}, transfers_{transfers}, base_{base} {
+            nvec<std::uint32_t, transfer, 2>& transfers)
+      : tt_{tt}, state_{state}, transfers_{transfers} {
     first_locs_.resize(2);
     first_locs_[0].resize(tt_.transport_to_trip_section_.size());
     utl::fill(first_locs_[0], 256U);
@@ -494,10 +493,6 @@ private:
     return 512U;
   }
 
-  date::sys_days base() const {
-    return tt_.internal_interval_days().from_ + as_int(base_) * date::days{1};
-  }
-
   int as_int(day_idx_t const d) const { return static_cast<int>(d.v_); }
 
   timetable const& tt_;
@@ -514,7 +509,6 @@ private:
   const nvec<std::uint32_t, transfer, 2>& transfers_;
   // R(t) - first known index of the trip's earliest found station
   std::vector<std::vector<stop_idx_t>> first_locs_;
-  day_idx_t base_;
   minutes_after_midnight_t abs_q_mam_;
   day_idx_t q_day_;
   minutes_after_midnight_t q_mam_;
