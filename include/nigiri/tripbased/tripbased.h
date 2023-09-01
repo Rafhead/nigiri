@@ -153,8 +153,8 @@ struct tripbased {
                std::uint8_t const max_transfers,
                unixtime_t const worst_time_at_dest,
                pareto_set<journey>& results) {
-    auto abs_max_time = abs_q_mam_ + minutes_after_midnight_t{1440U};
-    auto abs_min_time = abs_q_mam_ + minutes_after_midnight_t{1440U};
+    auto abs_max_time = tt_.to_unixtime(q_day_ + day_idx_t{1U}, q_mam_);
+    auto abs_min_time = tt_.to_unixtime(q_day_ + day_idx_t{1U}, q_mam_);
     // Iterate through segments
     for (auto seg_idx = 0U; seg_idx < state_.segments_size(); seg_idx++) {
       auto const curr_segment = get_segment(seg_idx);
@@ -165,13 +165,15 @@ struct tripbased {
       // segment's stop, not relative to the first route's station
       auto const [day_on_r_start, mam_at_r_start] =
           tt_.event_mam(curr_segment.t_idx(), 0U, event_type::kDep);
-      auto const [day_on_seg_start, mam_on_seg_start] = tt_.event_mam(
+      auto const delta_on_seg_start = tt_.event_mam(
           curr_segment.t_idx(), curr_segment.from(), event_type::kArr);
+      auto const day_on_seg_start = delta_on_seg_start.days();
+      auto const mam_on_seg_start = delta_on_seg_start.mam();
       auto const day_diff = day_on_seg_start - day_on_r_start;
       // Absolute time on segment start
       auto const abs_time_on_seg_start =
-          (q_day_ + curr_segment.on_query_day() - day_diff) * 1440U +
-          mam_on_seg_start;
+          tt_.to_unixtime(q_day_ + curr_segment.on_query_day() - day_diff,
+                          minutes_after_midnight_t{mam_on_seg_start});
 
       // Iterate through destination lines
       for (auto dest_line_idx = 0U; dest_line_idx < is_dest_line_.size();
@@ -189,46 +191,41 @@ struct tripbased {
           continue;
         }
         // If visiting --> Check if it improves arrival time
-        auto const [day_on_target, mam_on_target] = tt_.event_mam(
+        auto const delta_on_target = tt_.event_mam(
             curr_segment.t_idx(), target_stop_idx, event_type::kArr);
         // Calculating absolute arrival time
-        auto const abs_time_target = abs_time_on_seg_start +
-                                     (mam_on_target - mam_on_seg_start) +
-                                     dest_footpath.count();
+        auto const abs_time_target =
+            abs_time_on_seg_start +
+            (delta_on_target.as_duration() - delta_on_seg_start.as_duration()) +
+            dest_footpath;
         // Check if arrival time better than currently known
-        if (abs_time_target.v_ >= abs_min_time.count()) {
+        if (abs_time_target >= abs_min_time) {
           continue;
         }
         // Check if arrival time later than 24 hours after query start
         // Yes --> go to next route
-        if (abs_time_target.v_ > abs_max_time.count()) {
+        if (abs_time_target > abs_max_time) {
           continue;
         }
         // Update min known time at destination
-        abs_min_time = minutes_after_midnight_t{abs_time_target.v_};
+        abs_min_time = abs_time_target;
         // Add journey
         // Note: if there is a footpath from a station with target_stop_idx to
         // actual target station then it must be considered in reconstruction
-        auto const [optimal, it, dominated_by] = results.add(journey{
-            .legs_ = {},
-            .start_time_ = start_time,
-            .dest_time_ =
-                tt_.to_unixtime(q_day_ + curr_segment.on_query_day() - day_diff,
-                                minutes_after_midnight_t{
-                                    mam_on_target + dest_footpath.count()}),
-            .dest_ = location_idx_t{seg_stops[target_stop_idx]},
-            .transfers_ =
-                static_cast<std::uint8_t>(curr_segment.n_transfers())});
+        auto const [optimal, it, dominated_by] = results.add(
+            journey{.legs_ = {},
+                    .start_time_ = start_time,
+                    .dest_time_ = abs_time_target,
+                    .dest_ = location_idx_t{seg_stops[target_stop_idx]},
+                    .transfers_ =
+                        static_cast<std::uint8_t>(curr_segment.n_transfers())});
         if (optimal) {
           auto new_best = best_on_target{
               .segment_idx_ = seg_idx,
               .day_ = q_day_ + curr_segment.on_query_day() - day_diff,
               .stop_idx_ = target_stop_idx,
               .start_time_ = start_time,
-              .abs_time_on_target_ = tt_.to_unixtime(
-                  q_day_ + curr_segment.on_query_day() - day_diff,
-                  minutes_after_midnight_t{mam_on_target +
-                                           dest_footpath.count()}),
+              .abs_time_on_target_ = abs_time_target,
               .n_transfers_ =
                   static_cast<std::uint8_t>(curr_segment.n_transfers())};
           state_.add_best(new_best);
@@ -237,27 +234,29 @@ struct tripbased {
 
       // Transfers section
       // Absolute time of the segment's next station from start
-      auto const [day_on_seg_stop_next, mam_on_seg_stop_next] = tt_.event_mam(
+      auto const delta_on_seg_stop_next = tt_.event_mam(
           curr_segment.t_idx(), curr_segment.from() + 1U, event_type::kArr);
       auto const abs_time_seq_stop_next =
-          abs_time_on_seg_start + (mam_on_seg_stop_next - mam_on_seg_start);
+          abs_time_on_seg_start + (delta_on_seg_stop_next.as_duration() -
+                                   delta_on_seg_start.as_duration());
       // Check if arrival is better than known on target
       // And 24 Hours check
-      if (abs_time_on_seg_start >= abs_min_time.count() ||
-          abs_time_on_seg_start > abs_max_time.count()) {
+      if (abs_time_on_seg_start >= abs_min_time ||
+          abs_time_on_seg_start > abs_max_time) {
         continue;
       }
       // Iterating through segment's stops
       for (auto seg_stop_idx = curr_segment.from() + 1U;
            seg_stop_idx <= curr_segment.to(); seg_stop_idx++) {
         // Absolute time on the segment's stop
-        auto const [day_on_seg_stop, mam_on_seg_stop] =
+        auto const delta_on_seg_stop =
             tt_.event_mam(curr_segment.t_idx(), seg_stop_idx, event_type::kArr);
         auto const abs_time_seq_stop =
-            abs_time_on_seg_start + (mam_on_seg_stop - mam_on_seg_start);
+            abs_time_on_seg_start + (delta_on_seg_stop.as_duration() -
+                                     delta_on_seg_start.as_duration());
         // Difference between first and current segment's stop in days
         auto const seg_day_diff_on_stop =
-            mam_on_seg_stop / 1440U - mam_on_seg_start / 1440U;
+            delta_on_seg_stop.days() / 1440U - day_on_seg_start / 1440U;
         if (seg_day_diff_on_stop >= 1 && !curr_segment.on_query_day()) {
           std::cout << "Segment takes longer than one day to his next stop "
                        "and segment starts on next query day"
@@ -277,19 +276,18 @@ struct tripbased {
           auto const to_transport_idx = transfer.to();
           auto const to_stop_idx = transfer.stop_idx();
           // Check 24 Hours rule
-          auto const [day_on_transfer_stop, mam_on_transfer_stop] =
+          auto const delta_on_transfer_stop =
               tt_.event_mam(to_transport_idx, to_stop_idx, event_type::kDep);
           auto const abs_transfer_day =
               (q_day_ + curr_segment.on_query_day() + transfer.day_change());
-          // TODO: check correctness with days
-          auto const abs_time_on_transfer_stop =
-              (abs_transfer_day - day_on_transfer_stop) * 1440U +
-              mam_on_transfer_stop;
-          if (abs_time_on_transfer_stop.v_ > abs_max_time.count()) {
+          auto const abs_time_on_transfer_stop = tt_.to_unixtime(
+              (abs_transfer_day - delta_on_transfer_stop.days()),
+              delta_on_transfer_stop.as_duration());
+          if (abs_time_on_transfer_stop > abs_max_time) {
             std::cout << "Transfer overflows 24 hours rule" << std::endl;
             continue;
           }
-          // Enqueue
+          
           enqueue(tt_.transport_route_[to_transport_idx], to_transport_idx,
                   to_stop_idx, seg_idx, seg_stop_idx, n_transfers,
                   !(abs_transfer_day == q_day_));
@@ -321,12 +319,12 @@ private:
                        n_transfers, !day_idx);
       state_.add(new_trip_segment);
 
-      auto const& transport_bitset =
-          tt_.bitfields_[tt_.transport_traffic_days_[t_idx]];
       auto const [day_at_stop, mam_at_stop] =
           tt_.event_mam(t_idx, stop_index, event_type::kDep);
       auto const transport_range = tt_.route_transport_ranges_[r_idx];
+      // Iterate through all trips of the same line
       for (auto const transport : transport_range) {
+        // Skip the trip the function was called with
         if (transport == t_idx) {
           continue;
         }
