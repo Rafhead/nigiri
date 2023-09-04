@@ -7,7 +7,7 @@ void reconstruct_journey(
     query const& q,
     day_idx_t q_day,
     tripbased_state const& state,
-    std::vector<std::pair<location_idx_t, duration_t>> is_dest,
+    std::vector<std::vector<std::pair<location_idx_t, duration_t>>> is_dest,
     journey& j) {
   // Iterate through best and find valid
   for (auto best : state.best_) {
@@ -29,8 +29,20 @@ void reconstruct_journey(
                 tt.event_mam(seg.t_idx(), seg.from(), event_type::kDep).days()};
     auto seg_dep_time_from =
         tt.event_time(seg_transport, seg.from(), event_type::kDep);
+
     // Ensure footpath to target isn't needed
-    auto const [target_l_idx, footpath_dur] = is_dest[seg_l_idx.v_];
+    // Check all targets that are reachable from the station where segments
+    // reaches one of the target stations and find minimal possible distance to
+    // target to minimize the arrival time.
+    auto [target_l_idx, footpath_dur] = is_dest[seg_l_idx.v_][0];
+    for (auto [dest_l_idx, footpath_to_dest] : is_dest[seg_l_idx.v_]) {
+      if (footpath_to_dest < footpath_dur &&
+          dest_l_idx != location_idx_t::invalid()) {
+        target_l_idx = dest_l_idx;
+        footpath_dur = footpath_to_dest;
+      }
+    }
+
     // Segment doesn't visit target directly
     if (footpath_dur != duration_t{0U}) {
       auto const footpath_to_target = footpath(target_l_idx, footpath_dur);

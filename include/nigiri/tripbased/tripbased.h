@@ -90,8 +90,10 @@ struct tripbased {
 
     is_dest_.resize(tt_.n_locations());
     is_dest_line_.resize(tt_.n_routes());
-    utl::fill(is_dest_,
-              std::make_pair(location_idx_t::invalid(), duration_t{0U}));
+    for (auto dest : is_dest_) {
+      utl::fill(dest,
+                std::make_pair(location_idx_t::invalid(), duration_t{64U}));
+    }
     utl::fill(is_dest_line_, std::make_pair(0U, duration_t{0}));
     find_target_lines(is_dest);
   };
@@ -287,7 +289,7 @@ struct tripbased {
             std::cout << "Transfer overflows 24 hours rule" << std::endl;
             continue;
           }
-          
+
           enqueue(tt_.transport_route_[to_transport_idx], to_transport_idx,
                   to_stop_idx, seg_idx, seg_stop_idx, n_transfers,
                   !(abs_transfer_day == q_day_));
@@ -419,6 +421,8 @@ private:
   void find_target_lines(std::vector<bool>& is_dest) {
     for (auto i = 0U; i < is_dest.size(); i++) {
       if (is_dest[i]) {
+        // Destination is reachable from itself with footpath 0
+        is_dest_[i].emplace_back(std::make_pair(location_idx_t{i}, 0U));
         // For initial destination itself
         auto routes_from_loc = tt_.location_routes_[location_idx_t{i}];
         for (auto route_from_loc : routes_from_loc) {
@@ -446,8 +450,8 @@ private:
         for (auto footpath : footpaths_in) {
           duration = footpath.duration();
           from_loc_idx = footpath.target();
-          is_dest_[from_loc_idx.v_] =
-              std::make_pair(location_idx_t{i}, duration);
+          is_dest_[from_loc_idx.v_].emplace_back(
+              std::make_pair(location_idx_t{i}, duration));
           // Iterate through routes of location that reaches tgt with footpath
           routes_from_loc = tt_.location_routes_[from_loc_idx];
           for (auto route_from_loc : routes_from_loc) {
@@ -494,10 +498,9 @@ private:
 
   timetable const& tt_;
   tripbased_state& state_;
-  // location_idx - location_idx_t of target reachable from it and footpath
-  // duration = 0 for the target itself
-  // TODO: adapt to case when same station has footpath to many targets
-  std::vector<std::pair<location_idx_t, duration_t>> is_dest_;
+  // location_idx - list of location_idx_t of targets reachable from it and
+  // footpath. Duration = 0 for the target itself
+  std::vector<std::vector<std::pair<location_idx_t, duration_t>>> is_dest_;
   // route_idx - his stop index and footpath duration with that target is
   // reachable. Duration = 0 if trip visits the target directly
   // TODO: adapt to case when multiple route stops visit target by using

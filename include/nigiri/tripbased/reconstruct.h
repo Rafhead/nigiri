@@ -18,7 +18,8 @@ void reconstruct_journey(
     query const& q,
     day_idx_t q_day,
     tripbased_state const& state,
-    std::vector<std::pair<location_idx_t, duration_t>> const& is_dest,
+    std::vector<std::vector<std::pair<location_idx_t, duration_t>>> const&
+        is_dest,
     journey& j);
 
 }  // namespace nigiri::tripbased
