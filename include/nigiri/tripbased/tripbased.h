@@ -91,10 +91,14 @@ struct tripbased {
     is_dest_.resize(tt_.n_locations());
     is_dest_line_.resize(tt_.n_routes());
     for (auto dest : is_dest_) {
-      utl::fill(dest,
-                std::make_pair(location_idx_t::invalid(), duration_t{64U}));
+      dest.resize(0);
+      // utl::fill(dest,
+      //           std::make_pair(location_idx_t::invalid(), duration_t{64U}));
     }
-    utl::fill(is_dest_line_, std::make_pair(0U, duration_t{0}));
+    for (auto dest_line : is_dest_line_) {
+      dest_line.resize(0);
+      // utl::fill(dest_line, std::make_pair(0U, location_idx_t ::invalid()));
+    }
     find_target_lines(is_dest);
   };
 
@@ -180,57 +184,83 @@ struct tripbased {
       // Iterate through destination lines
       for (auto dest_line_idx = 0U; dest_line_idx < is_dest_line_.size();
            dest_line_idx++) {
-        // TODO: count case when a line visits more than one stop that is
-        // target/that reaches target with footpath
-        auto const [dest_stop_idx, dest_footpath] =
-            is_dest_line_[dest_line_idx];
-        // Skip if segment's line not visiting target
-        // Or if it's stop range doesn't contain target
-        auto const target_stop_idx =
-            contains_target(curr_segment.from() + 1U, seg_stops.size(),
-                            dest_stop_idx, route_idx_t{dest_line_idx});
-        if (seg_route_idx.v_ != dest_line_idx || target_stop_idx == 512U) {
+        // Skip if this is another line than currently segment's line
+        if (seg_route_idx.v_ != dest_line_idx) {
           continue;
         }
-        // If visiting --> Check if it improves arrival time
-        auto const delta_on_target = tt_.event_mam(
-            curr_segment.t_idx(), target_stop_idx, event_type::kArr);
-        // Calculating absolute arrival time
-        auto const abs_time_target =
-            abs_time_on_seg_start +
-            (delta_on_target.as_duration() - delta_on_seg_start.as_duration()) +
-            dest_footpath;
-        // Check if arrival time better than currently known
-        if (abs_time_target >= abs_min_time) {
+        // Skip if this line doesn't visit any target
+        if (is_dest_line_[dest_line_idx].empty()) {
           continue;
         }
-        // Check if arrival time later than 24 hours after query start
-        // Yes --> go to next route
-        if (abs_time_target > abs_max_time) {
-          continue;
-        }
-        // Update min known time at destination
-        abs_min_time = abs_time_target;
-        // Add journey
-        // Note: if there is a footpath from a station with target_stop_idx to
-        // actual target station then it must be considered in reconstruction
-        auto const [optimal, it, dominated_by] = results.add(
-            journey{.legs_ = {},
-                    .start_time_ = start_time,
-                    .dest_time_ = abs_time_target,
-                    .dest_ = location_idx_t{seg_stops[target_stop_idx]},
-                    .transfers_ =
-                        static_cast<std::uint8_t>(curr_segment.n_transfers())});
-        if (optimal) {
-          auto new_best = best_on_target{
-              .segment_idx_ = seg_idx,
-              .day_ = q_day_ + curr_segment.on_query_day() - day_diff,
-              .stop_idx_ = target_stop_idx,
+
+        // Iterate through dest_line stops and check every stop's arrival times
+        // Case when line can visit multiple targets considered
+        auto [dest_stop_idx, dest_l_idx] = is_dest_line_[dest_line_idx][0];
+        auto dest_footpath = duration_t{64U};
+        auto target_stop_idx = stop_idx_t{0U};
+        for (auto [d_stop_idx, d_l_idx] : is_dest_line_[dest_line_idx]) {
+          target_stop_idx =
+              contains_target(curr_segment.from() + 1U, seg_stops.size() - 1U,
+                              d_stop_idx, route_idx_t{dest_line_idx});
+          // Skip if segment's line not visiting target
+          // Or if it's stop range doesn't contain target
+          if (target_stop_idx == 512U) {
+            continue;
+          }
+          // Calculate footpath from segment's stop to target dest_l_idx
+          auto r_stop_to_target = stop{seg_stops[d_stop_idx]};
+          auto footpaths_from =
+              tt_.locations_.get(r_stop_to_target.location_idx())
+                  .footpaths_out_;
+          for (auto footpath : footpaths_from) {
+            if (footpath.target() == dest_l_idx) {
+              dest_footpath = footpath.duration();
+            }
+          }
+          // Case when no footpath exists ==> route visits target directly
+          if (dest_footpath == duration_t{64U}) {
+            dest_footpath = duration_t{0U};
+          }
+
+          // Check if it improves arrival time
+          auto const delta_on_target = tt_.event_mam(
+              curr_segment.t_idx(), target_stop_idx, event_type::kArr);
+          // Calculating absolute arrival time
+          auto const abs_time_target = abs_time_on_seg_start +
+                                       (delta_on_target.as_duration() -
+                                        delta_on_seg_start.as_duration()) +
+                                       dest_footpath;
+          // Check if arrival time better than currently known
+          if (abs_time_target >= abs_min_time) {
+            continue;
+          }
+          // Check if arrival time later than 24 hours after query start
+          if (abs_time_target > abs_max_time) {
+            continue;
+          }
+          // Update min known time at destination
+          abs_min_time = abs_time_target;
+          // Add journey
+          // Note: if there is a footpath from a station with target_stop_idx to
+          // actual target station then it must be considered in reconstruction
+          auto const [optimal, it, dominated_by] = results.add(journey{
+              .legs_ = {},
               .start_time_ = start_time,
-              .abs_time_on_target_ = abs_time_target,
-              .n_transfers_ =
-                  static_cast<std::uint8_t>(curr_segment.n_transfers())};
-          state_.add_best(new_best);
+              .dest_time_ = abs_time_target,
+              .dest_ = location_idx_t{seg_stops[target_stop_idx]},
+              .transfers_ =
+                  static_cast<std::uint8_t>(curr_segment.n_transfers())});
+          if (optimal) {
+            auto new_best = best_on_target{
+                .segment_idx_ = seg_idx,
+                .day_ = q_day_ + curr_segment.on_query_day() - day_diff,
+                .stop_idx_ = target_stop_idx,
+                .start_time_ = start_time,
+                .abs_time_on_target_ = abs_time_target,
+                .n_transfers_ =
+                    static_cast<std::uint8_t>(curr_segment.n_transfers())};
+            state_.add_best(new_best);
+          }
         }
       }
 
@@ -416,8 +446,6 @@ private:
     }
   }
 
-  // TODO: same line visits multiple destination stops
-  // structure dest_lines with stop offset and duration
   void find_target_lines(std::vector<bool>& is_dest) {
     for (auto i = 0U; i < is_dest.size(); i++) {
       if (is_dest[i]) {
@@ -429,15 +457,15 @@ private:
           auto stop_idx = 0U;
           auto const route_stops = tt_.route_location_seq_[route_from_loc];
           // Find index of the location relative to route
-          // TODO: multiple same stations - circled routes?
+          // Multiple same stations counted - circled routes
           for (auto route_loc : route_stops) {
             if (route_loc == i) {
               stop_idx = route_loc;
-              break;
+              // Destination line visits target from is_dest directly
+              is_dest_line_[route_from_loc.v_].emplace_back(
+                  std::make_pair(stop_idx, location_idx_t{i}));
             }
           }
-          is_dest_line_[route_from_loc.v_] =
-              std::make_pair(stop_idx, duration_t{0U});
         }
 
         // Footpaths_in are footpath from other stations to this
@@ -452,26 +480,19 @@ private:
           from_loc_idx = footpath.target();
           is_dest_[from_loc_idx.v_].emplace_back(
               std::make_pair(location_idx_t{i}, duration));
-          // Iterate through routes of location that reaches tgt with footpath
+          // Iterate through routes of location that reach tgt with footpath
           routes_from_loc = tt_.location_routes_[from_loc_idx];
           for (auto route_from_loc : routes_from_loc) {
             auto stop_idx = 0U;
             auto const route_stops = tt_.route_location_seq_[route_from_loc];
             // Find index of the location relative to route
-            // TODO: multiple same stations - circled routes?
+            // Multiple same stations counted - circled routes
             for (auto route_loc : route_stops) {
               if (route_loc == from_loc_idx.v_) {
                 stop_idx = route_loc;
-                break;
+                is_dest_line_[route_from_loc.v_].emplace_back(
+                    std::make_pair(stop_idx, location_idx_t{i}));
               }
-            }
-            // If previously the line didn't visit target directly
-            // Or if new footpath is shorter
-            // Currently only minimal footpath stored what is not optimal
-            if (is_dest_line_[route_from_loc.v_].first == 0U ||
-                duration < is_dest_line_[route_from_loc.v_].second) {
-              is_dest_line_[route_from_loc.v_] =
-                  std::make_pair(stop_idx, duration);
             }
           }
         }
@@ -494,18 +515,16 @@ private:
     return 512U;
   }
 
-  int as_int(day_idx_t const d) const { return static_cast<int>(d.v_); }
-
   timetable const& tt_;
   tripbased_state& state_;
   // location_idx - list of location_idx_t of targets reachable from it and
   // footpath. Duration = 0 for the target itself
   std::vector<std::vector<std::pair<location_idx_t, duration_t>>> is_dest_;
-  // route_idx - his stop index and footpath duration with that target is
-  // reachable. Duration = 0 if trip visits the target directly
+  // route_idx - list of his stop indexes and locations. Each pair says which
+  // target location_idx is reachable using stop idx of route.
   // TODO: adapt to case when multiple route stops visit target by using
   // footpath
-  std::vector<std::pair<uint32_t, duration_t>> is_dest_line_;
+  std::vector<std::vector<std::pair<stop_idx_t, location_idx_t>>> is_dest_line_;
   const nvec<std::uint32_t, transfer, 2>& transfers_;
   // R(t) - first known index of the trip's earliest found station
   std::vector<std::vector<stop_idx_t>> first_locs_;
