@@ -522,8 +522,6 @@ private:
   std::vector<std::vector<std::pair<location_idx_t, duration_t>>> is_dest_;
   // route_idx - list of his stop indexes and locations. Each pair says which
   // target location_idx is reachable using stop idx of route.
-  // TODO: adapt to case when multiple route stops visit target by using
-  // footpath
   std::vector<std::vector<std::pair<stop_idx_t, location_idx_t>>> is_dest_line_;
   const nvec<std::uint32_t, transfer, 2>& transfers_;
   // R(t) - first known index of the trip's earliest found station
