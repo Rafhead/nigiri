@@ -258,9 +258,9 @@ struct tripbased {
 
       // Transfers section
       // Absolute time of the segment's next station from start
-      auto const delta_on_seg_stop_next = tt_.event_mam(
-          curr_segment.t_idx(), curr_segment.from() + 1U, event_type::kArr);
-      /*auto const abs_time_seq_stop_next =
+      /*auto const delta_on_seg_stop_next = tt_.event_mam(
+          curr_segment.t_idx(), curr_segment.from() + 1U, event_type::kArr);*/
+      /*auto const delta_on_seg_stop_next =
           abs_time_on_seg_start + (delta_on_seg_stop_next.as_duration() -
                                    delta_on_seg_start.as_duration());*/
       // Check if arrival is better than known on target
