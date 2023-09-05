@@ -7,11 +7,13 @@ void reconstruct_journey(
     query const& q,
     day_idx_t q_day,
     tripbased_state const& state,
-    std::vector<std::vector<std::pair<location_idx_t, duration_t>>> is_dest,
+    std::vector<std::vector<std::pair<location_idx_t, duration_t>>> const&
+        is_dest,
     journey& j) {
   // Iterate through best and find valid
   for (auto best : state.best_) {
-    if (best.abs_time_on_target_ != j.dest_time_ ||
+    if (best.day_ == day_idx_t::invalid() ||
+        best.abs_time_on_target_ != j.dest_time_ ||
         best.n_transfers_ != j.transfers_ ||
         best.start_time_ != j.start_time_) {
       std::cout << "Best candidate not found for a journey j" << std::endl;

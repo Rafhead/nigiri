@@ -57,7 +57,7 @@ public:
 
   size_t segments_size() { return trip_segments_.size(); }
 
-  void reset() { trip_segments_.resize(0); }
+  void reset() { trip_segments_.clear(); }
 
   void add_best(best_on_target const& b) {
     for (auto best : best_) {
@@ -74,17 +74,16 @@ public:
 struct tripbased {
   using algo_stats_t = tripbased_stats;
   using algo_state_t = tripbased_state;
+  // TODO: remove transfers
   tripbased(timetable const& tt,
             tripbased_state& state,
             std::vector<bool>& is_dest,
-            nvec<std::uint32_t, transfer, 2>& transfers)
+            nvec<std::uint32_t, transfer, 2> const& transfers,
+            std::vector<std::uint16_t>&,
+            std::vector<std::uint16_t>&,
+            day_idx_t const)
       : tt_{tt}, state_{state}, transfers_{transfers} {
-    first_locs_.resize(2);
-    first_locs_[0].resize(tt_.transport_to_trip_section_.size());
-    utl::fill(first_locs_[0], 256U);
-
-    first_locs_[1].resize(tt_.transport_to_trip_section_.size());
-    utl::fill(first_locs_[1], 256U);
+    reset_arrivals();
 
     n_transfers_ = 0U;
 
@@ -92,12 +91,9 @@ struct tripbased {
     is_dest_line_.resize(tt_.n_routes());
     for (auto dest : is_dest_) {
       dest.resize(0);
-      // utl::fill(dest,
-      //           std::make_pair(location_idx_t::invalid(), duration_t{64U}));
     }
     for (auto dest_line : is_dest_line_) {
       dest_line.resize(0);
-      // utl::fill(dest_line, std::make_pair(0U, location_idx_t ::invalid()));
     }
     find_target_lines(is_dest);
   };
@@ -114,14 +110,12 @@ struct tripbased {
 
   // Reset completely R(t)
   void reset_arrivals() {
-    first_locs_.resize(0);
-    first_locs_[0].resize(0);
-    first_locs_[1].resize(0);
+    first_locs_.clear();
     first_locs_.resize(2);
     first_locs_[0].resize(tt_.transport_to_trip_section_.size());
-    utl::fill(first_locs_[0], 256U);
+    utl::fill(first_locs_[0], std::numeric_limits<uint16_t>::max());
     first_locs_[1].resize(tt_.transport_to_trip_section_.size());
-    utl::fill(first_locs_[1], 256U);
+    utl::fill(first_locs_[1], std::numeric_limits<uint16_t>::max());
   }
 
   // Used when iterating through start times
@@ -147,11 +141,11 @@ struct tripbased {
     enqueue_start_trips(l, duration_t{0U});
 
     // for all that are reachable by footpath
-    auto const src_loc = tt_.locations_.get(l);
+    /*auto const src_loc = tt_.locations_.get(l);
     auto const src_loc_footpaths = src_loc.footpaths_out_;
     for (auto footpath : src_loc_footpaths) {
       enqueue_start_trips(footpath.target(), footpath.duration());
-    }
+    }*/
   }
 
   // EA query itself - main part of algorithm
@@ -159,7 +153,7 @@ struct tripbased {
                std::uint8_t const max_transfers,
                unixtime_t const worst_time_at_dest,
                pareto_set<journey>& results) {
-    auto abs_max_time = tt_.to_unixtime(q_day_ + day_idx_t{1U}, q_mam_);
+    auto const abs_max_time = worst_time_at_dest;
     auto abs_min_time = tt_.to_unixtime(q_day_ + day_idx_t{1U}, q_mam_);
     // Iterate through segments
     for (auto seg_idx = 0U; seg_idx < state_.segments_size(); seg_idx++) {
@@ -243,13 +237,12 @@ struct tripbased {
           // Add journey
           // Note: if there is a footpath from a station with target_stop_idx to
           // actual target station then it must be considered in reconstruction
-          auto const [optimal, it, dominated_by] = results.add(journey{
-              .legs_ = {},
-              .start_time_ = start_time,
-              .dest_time_ = abs_time_target,
-              .dest_ = location_idx_t{seg_stops[target_stop_idx]},
-              .transfers_ =
-                  static_cast<std::uint8_t>(curr_segment.n_transfers())});
+          auto const [optimal, it, dominated_by] = results.add(
+              journey{.legs_ = {},
+                      .start_time_ = start_time,
+                      .dest_time_ = abs_time_target,
+                      .dest_ = location_idx_t{seg_stops[target_stop_idx]},
+                      .transfers_ = curr_segment.n_transfers()});
           if (optimal) {
             auto new_best = best_on_target{
                 .segment_idx_ = seg_idx,
@@ -257,8 +250,7 @@ struct tripbased {
                 .stop_idx_ = target_stop_idx,
                 .start_time_ = start_time,
                 .abs_time_on_target_ = abs_time_target,
-                .n_transfers_ =
-                    static_cast<std::uint8_t>(curr_segment.n_transfers())};
+                .n_transfers_ = curr_segment.n_transfers()};
             state_.add_best(new_best);
           }
         }
@@ -334,7 +326,6 @@ struct tripbased {
         }
       }
     }
-    // TODO: possibly break or return something after run
   }
 
   // Provide journeys in right format
@@ -353,10 +344,11 @@ private:
                uint8_t n_transfers,
                size_t day_idx) {
     if (stop_index < first_locs_[day_idx][t_idx.v_]) {
+      // todo: count numeric limits as end station
       auto const latest_loc = first_locs_[day_idx][t_idx.v_];
       auto new_trip_segment =
-          trip_segment(t_idx, stop_index, latest_loc, prev_idx, prev_stop_idx,
-                       n_transfers, !day_idx);
+          trip_segment(t_idx, stop_index, latest_loc, n_transfers, prev_idx,
+                       prev_stop_idx, !day_idx);
       state_.add(new_trip_segment);
 
       auto const [day_at_stop, mam_at_stop] =
