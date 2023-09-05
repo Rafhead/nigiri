@@ -340,7 +340,6 @@ bitfield_idx_t update_time(
     auto equal = false;
     auto improve = cista::bitset<512>();
     auto temp_bf = cista::bitset<512>();
-    minutes_after_midnight_t time_on_l;
     cista::bitset<512>* bf_on_l_time;
     auto times_on_l = times[l_idx];
     for (auto time_on_l_it = times_on_l.begin();

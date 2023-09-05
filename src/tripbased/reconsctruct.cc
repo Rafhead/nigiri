@@ -4,7 +4,7 @@ namespace nigiri::tripbased {
 
 void reconstruct_journey(
     timetable const& tt,
-    query const& q,
+    query const&,
     day_idx_t q_day,
     tripbased_state const& state,
     std::vector<std::vector<std::pair<location_idx_t, duration_t>>> const&

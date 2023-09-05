@@ -260,9 +260,9 @@ struct tripbased {
       // Absolute time of the segment's next station from start
       auto const delta_on_seg_stop_next = tt_.event_mam(
           curr_segment.t_idx(), curr_segment.from() + 1U, event_type::kArr);
-      auto const abs_time_seq_stop_next =
+      /*auto const abs_time_seq_stop_next =
           abs_time_on_seg_start + (delta_on_seg_stop_next.as_duration() -
-                                   delta_on_seg_start.as_duration());
+                                   delta_on_seg_start.as_duration());*/
       // Check if arrival is better than known on target
       // And 24 Hours check
       if (abs_time_on_seg_start >= abs_min_time ||
@@ -275,9 +275,9 @@ struct tripbased {
         // Absolute time on the segment's stop
         auto const delta_on_seg_stop =
             tt_.event_mam(curr_segment.t_idx(), seg_stop_idx, event_type::kArr);
-        auto const abs_time_seq_stop =
+        /*auto const abs_time_seq_stop =
             abs_time_on_seg_start + (delta_on_seg_stop.as_duration() -
-                                     delta_on_seg_start.as_duration());
+                                     delta_on_seg_start.as_duration());*/
         // Difference between first and current segment's stop in days
         auto const seg_day_diff_on_stop =
             delta_on_seg_stop.days() / 1440U - day_on_seg_start / 1440U;
