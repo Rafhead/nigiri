@@ -446,7 +446,7 @@ struct timetable {
   vecvec<location_idx_t, footpath> bwd_search_lb_graph_;
 
   // Trip-based transfers
-  nvec<std::uint32_t, tripbased::transfer, 2>& transfers_;
+  nvec<std::uint32_t, tripbased::transfer, 2> transfers_;
 };
 
 }  // namespace nigiri
