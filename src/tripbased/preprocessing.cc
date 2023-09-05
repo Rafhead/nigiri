@@ -53,7 +53,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
       auto const loc_from_idx = loc_from_seq[stop_from_idx];
       auto const [transport_from_days, transport_from_mam] =
           tt.event_mam(route_idx_t{route_from_idx}, transport_from_idx,
-                       loc_from_idx, event_type::kArr);
+                       stop_from_idx, event_type::kArr);
       transport_from_bf_idx = tt.transport_traffic_days_[transport_from_idx];
       update_time(arrival_times, location_idx_t{loc_from_idx},
                   minutes_after_midnight_t{transport_from_mam},
@@ -186,45 +186,35 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               loc_to_next_idx = location_idx_t{*(loc_to_pos_it + 1)};
             }
             if (u_turn_valid && loc_from_prev_idx == loc_to_next_idx &&
-                stop_from_idx != 0 &&
+                stop_from_idx != 1U &&
                 loc_to_pos_it != route_to_stop_seq.end() - 2) {
-              auto const transport_from_prev_mam =
+              auto const [transport_from_prev_days, transport_from_prev_mam] =
                   tt.event_mam(route_idx_t{route_from_idx}, transport_from_idx,
                                stop_from_idx - 1, event_type::kArr);
-              auto const day_diff = (transport_from_mam / 1440U) -
-                                    (transport_from_prev_mam.mam() / 1440U);
+              auto const day_diff =
+                  transport_from_days - transport_from_prev_days;
               auto const transport_from_bf_cc_m_idx = get_bitfield_idx(
-                  transport_from_bf >>
-                      (minutes_after_midnight_t{transport_from_prev_mam.mam()} /
-                       1440U)
-                          .count(),
-                  tt);
+                  transport_from_bf >> transport_from_prev_days, tt);
               auto next_c = false;
               auto const change_time =
                   tt.locations_.transfer_time_[location_idx_t{loc_from_idx}];
-              if ((minutes_after_midnight_t{transport_from_prev_mam.mam()} +
-                   change_time)
-                          .count() /
-                      1440 !=
-                  transport_from_prev_mam.count() / 1440) {
+              if (transport_from_prev_mam + change_time.count() !=
+                  transport_from_prev_mam) {
                 next_c = true;
               }
               // auto const route_to_n_transports = static_cast<unsigned>(
               //     tt.route_transport_ranges_[route_to_idx].size());
-              auto const location_to_next_mam =
+              auto const [loc_to_next_days, loc_to_next_mam] =
                   tt.event_mam(route_to_idx, transport_to_idx, stop_to_idx + 1,
                                event_type::kDep);
               //(ea_time - 2 * route_to_n_transports)->count();
-              if ((minutes_after_midnight_t{transport_from_prev_mam.mam()} +
-                   change_time)
-                          .count() %
-                      1440 >
-                  location_to_next_mam.count() % 1440) {
+              if (transport_from_prev_mam + change_time.count() % 1440U >
+                  loc_to_next_mam % 1440U) {
                 next_c = true;
               }
               //[b_u]'' <-- ...
               auto transport_to_bf_cc = transport_to_bf;
-              transport_to_bf_cc >>= location_to_next_mam.count() / 1440;
+              transport_to_bf_cc >>= loc_to_next_days;
               transport_to_bf_cc <<= next_c;
               //[b_tr]'
               auto transfer_bf_cpy = tt.bitfields_[transport_from_bf_cc_m_idx];
