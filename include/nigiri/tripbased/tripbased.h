@@ -78,11 +78,11 @@ struct tripbased {
   tripbased(timetable const& tt,
             tripbased_state& state,
             std::vector<bool>& is_dest,
-            nvec<std::uint32_t, transfer, 2> const& transfers,
+            // nvec<std::uint32_t, transfer, 2> const& transfers,
             std::vector<std::uint16_t>&,
             std::vector<std::uint16_t>&,
             day_idx_t const)
-      : tt_{tt}, state_{state}, transfers_{transfers} {
+      : tt_{tt}, state_{state} {  //, transfers_{transfers} {
     reset_arrivals();
 
     n_transfers_ = 0U;
@@ -290,7 +290,7 @@ struct tripbased {
         // Iterate through transfers on this stop
         // Note: transfers are not possible from first stop therefore skip it
         for (auto transfer :
-             transfers_.at(curr_segment.t_idx().v_, seg_stop_idx)) {
+             tt_.transfers_.at(curr_segment.t_idx().v_, seg_stop_idx)) {
           // Take n_transfers from current segment to be able to count it
           auto const n_transfers = curr_segment.n_transfers() + 1U;
           if (n_transfers > max_transfers) {
@@ -523,8 +523,8 @@ private:
   // route_idx - list of his stop indexes and locations. Each pair says which
   // target location_idx is reachable using stop idx of route.
   std::vector<std::vector<std::pair<stop_idx_t, location_idx_t>>> is_dest_line_;
-  const nvec<std::uint32_t, transfer, 2>& transfers_;
-  // R(t) - first known index of the trip's earliest found station
+  // const nvec<std::uint32_t, transfer, 2>& transfers_;
+  //  R(t) - first known index of the trip's earliest found station
   std::vector<std::vector<stop_idx_t>> first_locs_;
   unixtime_t abs_q_mam_;
   day_idx_t q_day_;
