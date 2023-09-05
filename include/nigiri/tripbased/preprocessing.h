@@ -23,6 +23,7 @@ bitfield_idx_t update_time(
     bool day_change,
     timetable& tt);
 
+// Get bitfield's index or create a bitfield and return the index to new bf
 const bitfield_idx_t get_bitfield_idx(const bitfield& b, timetable& tt) {
   bitfield_idx_t idx;
   return utl::get_or_create(bitfields, b, [&]() {

@@ -5,6 +5,8 @@
 namespace nigiri::tripbased {
 
 struct transfer {
+  transfer() = default;
+  
   transfer(transport_idx_t const to,
            unsigned const stop_idx,
            bitfield_idx_t const traffic_days_idx,
