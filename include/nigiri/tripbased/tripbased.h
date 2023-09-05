@@ -307,11 +307,19 @@ struct tripbased {
           }
           auto const to_transport_idx = transfer.to();
           auto const to_stop_idx = transfer.stop_idx();
-          // Check 24 Hours rule
+
           auto const delta_on_transfer_stop =
               tt_.event_mam(to_transport_idx, to_stop_idx, event_type::kDep);
+          auto const abs_transfer_day_from =
+              q_day_ + curr_segment.on_query_day();
           auto const abs_transfer_day =
-              (q_day_ + curr_segment.on_query_day() + transfer.day_change());
+              (abs_transfer_day_from + transfer.day_change());
+          // Check transfer active on specific day
+          if (!tt_.bitfields_[transfer.traffic_days()].test(
+                  to_idx(abs_transfer_day_from))) {
+            continue;
+          }
+          // Check 24 Hours rule
           auto const abs_time_on_transfer_stop = tt_.to_unixtime(
               (abs_transfer_day - delta_on_transfer_stop.days()),
               delta_on_transfer_stop.as_duration());
