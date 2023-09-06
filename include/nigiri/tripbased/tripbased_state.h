@@ -1,5 +1,7 @@
 #pragma once
 
+#include "nigiri/tripbased/best_on_target.h"
+#include "nigiri/tripbased/trip_segment.h"
 #include "nigiri/types.h"
 
 namespace nigiri::tripbased {

@@ -12,7 +12,6 @@
 #include "nigiri/tripbased/trip_segment.h"
 #include "nigiri/tripbased/tripbased_state.h"
 #include "nigiri/types.h"
-#include <queue>
 #include "utl/enumerate.h"
 
 namespace nigiri {
@@ -20,9 +19,6 @@ struct timetable;
 }
 
 namespace nigiri::tripbased {
-
-using journey = routing::journey;
-using query = routing::query;
 
 struct tripbased_stats {
   std::uint64_t n_trip_segments_visited_{0ULL};
@@ -111,7 +107,7 @@ struct tripbased {
   void execute(unixtime_t const start_time,
                std::uint8_t const max_transfers,
                unixtime_t const worst_time_at_dest,
-               pareto_set<journey>& results) {
+               pareto_set<routing::journey>& results) {
     auto const abs_max_time = worst_time_at_dest;
     auto abs_min_time = tt_.to_unixtime(q_day_ + day_idx_t{1U}, q_mam_);
     // Iterate through segments
@@ -196,12 +192,12 @@ struct tripbased {
           // Add journey
           // Note: if there is a footpath from a station with target_stop_idx to
           // actual target station then it must be considered in reconstruction
-          auto const [optimal, it, dominated_by] = results.add(
-              journey{.legs_ = {},
-                      .start_time_ = start_time,
-                      .dest_time_ = abs_time_target,
-                      .dest_ = location_idx_t{seg_stops[target_stop_idx]},
-                      .transfers_ = curr_segment.n_transfers()});
+          auto const [optimal, it, dominated_by] = results.add(routing::journey{
+              .legs_ = {},
+              .start_time_ = start_time,
+              .dest_time_ = abs_time_target,
+              .dest_ = location_idx_t{seg_stops[target_stop_idx]},
+              .transfers_ = curr_segment.n_transfers()});
           if (optimal) {
             auto new_best = best_on_target{
                 .segment_idx_ = seg_idx,
@@ -288,7 +284,7 @@ struct tripbased {
   }
 
   // Provide journeys in right format
-  void reconstruct(query const& q, journey& j) {
+  void reconstruct(routing::query const& q, routing::journey& j) {
     reconstruct_journey(tt_, q, q_day_, state_, is_dest_, j);
   }
 

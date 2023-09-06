@@ -1,7 +1,10 @@
 #pragma once
 
+#include "nigiri/routing/journey.h"
+#include "nigiri/routing/query.h"
+#include "nigiri/timetable.h"
+#include "nigiri/tripbased/tripbased_state.h"
 #include "nigiri/types.h"
-#include "tripbased.h"
 
 namespace nigiri {
 struct timetable;
@@ -9,9 +12,9 @@ struct timetable;
 
 namespace nigiri::tripbased {
 
-struct tripbased_state;
 using query = nigiri::routing::query;
 using journey = nigiri::routing::journey;
+struct tripbased_state;
 
 void reconstruct_journey(
     timetable const& tt,
