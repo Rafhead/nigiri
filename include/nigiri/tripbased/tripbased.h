@@ -5,10 +5,12 @@
 #include "nigiri/routing/pareto_set.h"
 #include "nigiri/routing/query.h"
 #include "nigiri/timetable.h"
+#include "nigiri/tripbased/best_on_target.h"
 #include "nigiri/tripbased/fws_multimap.h"
 #include "nigiri/tripbased/reconstruct.h"
 #include "nigiri/tripbased/transfer.h"
 #include "nigiri/tripbased/trip_segment.h"
+#include "nigiri/tripbased/tripbased_state.h"
 #include "nigiri/types.h"
 #include <queue>
 #include "utl/enumerate.h"
@@ -22,53 +24,10 @@ namespace nigiri::tripbased {
 using journey = routing::journey;
 using query = routing::query;
 
-struct best_on_target {
-  size_t segment_idx_;
-  // day on first stop
-  day_idx_t day_;
-  // stop from which target was reached
-  stop_idx_t stop_idx_;
-  unixtime_t start_time_;
-  unixtime_t abs_time_on_target_;
-  uint8_t n_transfers_;
-
-  bool dominates(best_on_target const& o) const {
-    if (start_time_ <= abs_time_on_target_) {
-      return n_transfers_ <= o.n_transfers_ && start_time_ >= o.start_time_ &&
-             abs_time_on_target_ <= o.abs_time_on_target_;
-    } else {
-      return n_transfers_ <= o.n_transfers_ && start_time_ <= o.start_time_ &&
-             abs_time_on_target_ >= o.abs_time_on_target_;
-    }
-  }
-};
-
 struct tripbased_stats {
   std::uint64_t n_trip_segments_visited_{0ULL};
   std::uint64_t n_footpaths_visited_{0ULL};
   std::uint64_t n_routes_visited_{0ULL};
-};
-
-struct tripbased_state {
-public:
-  void add(trip_segment const& new_segment) {
-    trip_segments_.push_back(new_segment);
-  }
-
-  size_t segments_size() { return trip_segments_.size(); }
-
-  void reset() { trip_segments_.clear(); }
-
-  void add_best(best_on_target const& b) {
-    for (auto best : best_) {
-      if (b.dominates(best)) {
-        best.day_ = day_idx_t::invalid();
-      }
-    }
-  }
-
-  std::vector<best_on_target> best_;
-  std::vector<trip_segment> trip_segments_;
 };
 
 struct tripbased {

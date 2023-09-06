@@ -26,7 +26,9 @@ add_custom_command(
         COMMENT "Generating GTFS RT protocol buffers C++ code"
 )
 add_library(gtfsrt ${CMAKE_CURRENT_BINARY_DIR}/generated/gtfsrt/gtfs-realtime.pb.cc
-        include/nigiri/tripbased/reconstruct.h)
+        include/nigiri/tripbased/reconstruct.h
+        include/nigiri/tripbased/tripbased_state.h
+        include/nigiri/tripbased/best_on_target.h)
 target_compile_features(gtfsrt PUBLIC cxx_std_23)
 target_include_directories(gtfsrt SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_link_libraries(gtfsrt protobuf)
