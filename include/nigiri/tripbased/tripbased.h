@@ -40,8 +40,6 @@ struct tripbased {
       : tt_{tt}, state_{state} {  //, transfers_{transfers} {
     reset_arrivals();
 
-    n_transfers_ = 0U;
-
     is_dest_.resize(tt_.n_locations());
     is_dest_line_.resize(tt_.n_routes());
     for (auto dest : is_dest_) {
@@ -63,6 +61,8 @@ struct tripbased {
     return state_.trip_segments_[state_.segments_size() - 1];
   }
 
+  algo_stats_t get_stats() const { return stats_; }
+
   // Reset completely R(t)
   void reset_arrivals() {
     first_locs_.clear();
@@ -75,10 +75,7 @@ struct tripbased {
 
   // Used when iterating through start times
   // trip_segments_ must be emptied
-  void next_start_time() {
-    state_.reset();
-    n_transfers_ = 0U;
-  }
+  void next_start_time() { state_.reset(); }
 
   // Add start stations - init for algorithm
   void add_start(location_idx_t const l, unixtime_t const t) {
@@ -484,7 +481,7 @@ private:
   unixtime_t abs_q_mam_;
   day_idx_t q_day_;
   minutes_after_midnight_t q_mam_;
-  uint8_t n_transfers_;
+  tripbased_stats stats_;
 };
 
 }  // namespace nigiri::tripbased
