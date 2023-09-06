@@ -6,7 +6,7 @@ namespace nigiri::tripbased {
 
 struct transfer {
   transfer() = default;
-  
+
   transfer(transport_idx_t const to,
            unsigned const stop_idx,
            bitfield_idx_t const traffic_days_idx,
@@ -34,5 +34,17 @@ private:
   std::uint64_t traffic_days_idx_ : 24;  // 16M
   std::uint64_t day_change_ : 1;
 };
+
+template <std::size_t NMaxTypes>
+constexpr auto static_type_hash(transfer const*,
+                                cista::hash_data<NMaxTypes> h) noexcept {
+  return h.combine(cista::hash("nigiri::tripbased::transfer"));
+}
+
+template <typename Ctx>
+inline void serialize(Ctx&, transfer const*, cista::offset_t const) {}
+
+template <typename Ctx>
+inline void deserialize(Ctx const&, transfer*) {}
 
 }  // namespace nigiri::tripbased
