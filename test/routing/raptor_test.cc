@@ -5,6 +5,8 @@
 
 #include "../loader/hrd/hrd_timetable.h"
 
+#include "nigiri/tripbased/preprocessing.h"
+
 #include "../raptor_search.h"
 
 using namespace date;
@@ -47,6 +49,29 @@ leg 3: (C, 0000003) [2020-03-30 07:45] -> (C, 0000003) [2020-03-30 07:45]
 
 
 )";
+
+TEST(routing, tripbased) {
+  constexpr auto const src = source_idx_t{0U};
+
+  timetable tt;
+  tt.date_range_ = full_period();
+  load_timetable(src, loader::hrd::hrd_5_20_26, files_abc(), tt);
+  finalize(tt);
+  tt.transfers_ = nigiri::tripbased::compute_transfers(tt);
+
+  auto const results = raptor_search(
+      tt, nullptr, "0000001", "0000003",
+      interval{unixtime_t{sys_days{2020_y / March / 30}} + 5_hours,
+               unixtime_t{sys_days{2020_y / March / 30}} + 6_hours});
+
+  std::stringstream ss;
+  ss << "\n";
+  for (auto const& x : results) {
+    x.print(ss, tt);
+    ss << "\n\n";
+  }
+  EXPECT_EQ(std::string_view{fwd_journeys}, ss.str());
+}
 
 TEST(routing, raptor_forward) {
   constexpr auto const src = source_idx_t{0U};

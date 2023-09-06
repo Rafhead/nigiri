@@ -29,7 +29,7 @@ add_library(gtfsrt ${CMAKE_CURRENT_BINARY_DIR}/generated/gtfsrt/gtfs-realtime.pb
         include/nigiri/tripbased/reconstruct.h
         include/nigiri/tripbased/tripbased_state.h
         include/nigiri/tripbased/best_on_target.h
-        test/routing/tripbased_test.cc)
+        )
 target_compile_features(gtfsrt PUBLIC cxx_std_23)
 target_include_directories(gtfsrt SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_link_libraries(gtfsrt protobuf)
@@ -84,7 +84,7 @@ file(GLOB_RECURSE nigiri-files src/*.cc)
 add_library(nigiri ${nigiri-files} include/nigiri/tripbased/fws_multimap.h include/nigiri/tripbased/vector.h include/nigiri/tripbased/data.h include/nigiri/tripbased/preprocessing.h src/tripbased/preprocessing.cc
         include/nigiri/tripbased/trip_segment.h
         src/tripbased/reconsctruct.cc
-        test/routing/tripbased_test.cc)
+        )
 target_include_directories(nigiri PUBLIC include)
 target_link_libraries(nigiri PUBLIC cista geo utl fmt date miniz date-tz wyhash unordered_dense gtfsrt)
 target_compile_features(nigiri PUBLIC cxx_std_23)
