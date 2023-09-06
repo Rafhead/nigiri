@@ -29,15 +29,18 @@ struct tripbased_stats {
 struct tripbased {
   using algo_stats_t = tripbased_stats;
   using algo_state_t = tripbased_state;
+
+  static constexpr bool kUseLowerBounds = true;
+
   // TODO: remove transfers
   tripbased(timetable const& tt,
+            rt_timetable const*,
             tripbased_state& state,
             std::vector<bool>& is_dest,
-            // nvec<std::uint32_t, transfer, 2> const& transfers,
             std::vector<std::uint16_t>&,
             std::vector<std::uint16_t>&,
             day_idx_t const)
-      : tt_{tt}, state_{state} {  //, transfers_{transfers} {
+      : tt_{tt}, state_{state} {
     reset_arrivals();
 
     is_dest_.resize(tt_.n_locations());
