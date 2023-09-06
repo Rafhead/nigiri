@@ -20,7 +20,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
 
   // auto bitfields = hash_map<bitfield, bitfield_idx_t>{};
   for (auto const [i, bf] : utl::enumerate(tt.bitfields_)) {
-    bitfields.emplace(bf, bitfield_idx_t{i});
+    bitfields_.emplace(bf, bitfield_idx_t{i});
   }
 
   // transfers for a single trip

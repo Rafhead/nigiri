@@ -9,7 +9,7 @@
 
 namespace nigiri::tripbased {
 
-hash_map<bitfield, bitfield_idx_t> bitfields;
+hash_map<bitfield, bitfield_idx_t> bitfields_;
 
 nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt);
 
@@ -24,9 +24,9 @@ bitfield_idx_t update_time(
     timetable& tt);
 
 // Get bitfield's index or create a bitfield and return the index to new bf
-const bitfield_idx_t get_bitfield_idx(const bitfield& b, timetable& tt) {
+bitfield_idx_t get_bitfield_idx(bitfield const& b, timetable& tt) {
   bitfield_idx_t idx;
-  return utl::get_or_create(bitfields, b, [&]() {
+  return utl::get_or_create(bitfields_, b, [&]() {
     idx = bitfield_idx_t{tt.bitfields_.size()};
     tt.bitfields_.emplace_back(b);
     return idx;
