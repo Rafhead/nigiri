@@ -9,7 +9,7 @@
 
 namespace nigiri::tripbased {
 
-hash_map<bitfield, bitfield_idx_t> bitfields_;
+extern hash_map<bitfield, bitfield_idx_t> bitfields_;
 
 nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt);
 
