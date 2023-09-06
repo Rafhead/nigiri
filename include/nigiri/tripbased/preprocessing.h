@@ -24,13 +24,6 @@ bitfield_idx_t update_time(
     timetable& tt);
 
 // Get bitfield's index or create a bitfield and return the index to new bf
-extern bitfield_idx_t get_bitfield_idx(bitfield const& b, timetable& tt) {
-  bitfield_idx_t idx;
-  return utl::get_or_create(bitfields_, b, [&]() {
-    idx = bitfield_idx_t{tt.bitfields_.size()};
-    tt.bitfields_.emplace_back(b);
-    return idx;
-  });
-}
+const bitfield_idx_t get_bitfield_idx(bitfield const& b, timetable& tt);
 
 }  // namespace nigiri::tripbased

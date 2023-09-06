@@ -370,4 +370,13 @@ bitfield_idx_t update_time(
   }
 }
 
+const bitfield_idx_t get_bitfield_idx(bitfield const& b, timetable& tt) {
+  bitfield_idx_t idx;
+  return utl::get_or_create(bitfields_, b, [&]() {
+    idx = bitfield_idx_t{tt.bitfields_.size()};
+    tt.bitfields_.emplace_back(b);
+    return idx;
+  });
+}
+
 }  // namespace nigiri::tripbased
