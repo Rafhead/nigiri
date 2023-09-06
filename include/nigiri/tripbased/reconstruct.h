@@ -105,8 +105,9 @@ void reconstruct_journey(
       // Arrival with index of stop where next segment was reached
       auto prev_seg_arr_time = tt.event_time(
           prev_seg_transport, seg.prev_stop_idx(), event_type::kArr);
-      auto prev_seg_dep_time =
-          tt.event_time(prev_seg_transport, prev_seg.from(), event_type::kDep);
+      /*auto prev_seg_dep_time =
+          tt.event_time(prev_seg_transport, prev_seg.from(),
+         event_type::kDep);*/
 
       // Adding footpath
       auto const transfer_footpath = footpath(

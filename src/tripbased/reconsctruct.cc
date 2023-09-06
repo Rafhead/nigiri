@@ -1,3 +1,4 @@
+/*
 #include "nigiri/tripbased/reconstruct.h"
 
 namespace nigiri::tripbased {
@@ -123,4 +124,4 @@ void reconstruct_journey(
   }
 };
 
-}  // namespace nigiri::tripbased
+}  // namespace nigiri::tripbased*/
