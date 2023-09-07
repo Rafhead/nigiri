@@ -1,5 +1,7 @@
 #include "nigiri/tripbased/preprocessing.h"
 #include "nigiri/common/it_range.h"
+#include "nigiri/common/linear_lower_bound.h"
+
 namespace nigiri::tripbased {
 
 nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
@@ -16,41 +18,64 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
   // minutes_after_midnight_t transport_to_mam;
   // Whether after transfer to u and traversing next station a footpath can make
   // day change
-  bool day_change_footpath;
+  // bool day_change_footpath;
 
   // auto bitfields = hash_map<bitfield, bitfield_idx_t>{};
   for (auto const [i, bf] : utl::enumerate(tt.bitfields_)) {
     bitfields_.emplace(bf, bitfield_idx_t{i});
   }
 
+  std::cout << "n routes " << tt.n_routes() << std::endl;
+  std::cout << "n locations " << tt.n_locations() << std::endl;
+  std::cout << "n transports " << tt.transport_traffic_days_.size()
+            << std::endl;
+
   // transfers for a single trip
   vector<vector<transfer>> trip_transfers;
   // transfers for a trip and for his unique stop
   vector<transfer> transfers_from;
+
+  // To store to bitsets in timetable for times on stations
+  std::vector<std::vector<std::pair<minutes_after_midnight_t, bitfield>>>
+      arrival_times;
+  std::vector<std::vector<std::pair<minutes_after_midnight_t, bitfield>>>
+      ea_change_times;
 
   // Iterate through all trips from index 0 to last
   for (auto transport_from_idx = transport_idx_t{0U};
        transport_from_idx < tt.transport_route_.size(); transport_from_idx++) {
     // reset trip transfers for a new trip
     trip_transfers.resize(0U);
-    // To store to bitsets in timetable for times on stations
-    mutable_fws_multimap<location_idx_t,
-                         std::pair<minutes_after_midnight_t, bitfield>>
-        arrival_times;
-    mutable_fws_multimap<location_idx_t,
-                         std::pair<minutes_after_midnight_t, bitfield>>
-        ea_change_times;
+
+    arrival_times.clear();
+    arrival_times.resize(tt.n_locations());
+    for (auto arrival_time : arrival_times) {
+      arrival_time.resize(0);
+    }
+    ea_change_times.clear();
+    ea_change_times.resize(tt.n_locations());
+
     auto const route_from_idx = tt.transport_route_[transport_from_idx];
 
     // Iterate through all stops of this trip's route in opposite direction
     // skipping the first station
     auto const loc_from_seq =
         tt.route_location_seq_[route_idx_t{route_from_idx}];
-    for (auto stop_from_idx = loc_from_seq.size() - 1U; stop_from_idx != 0U;
+    for (unsigned stop_from_idx = loc_from_seq.size() - 1U; stop_from_idx != 0U;
          stop_from_idx--) {
       // Reset transfers for a unique stop for the next stop
       transfers_from.resize(0U);
-      auto const loc_from_idx = loc_from_seq[stop_from_idx];
+
+      // Skip if it is not possible to transfer from this stop
+      auto const stop_from = stop{stop_from_idx};
+      /*std::cout << "Out from stop " << stop_from.location_ << " is "
+                << stop_from.out_allowed();
+      if (!stop_from.out_allowed()) {
+        trip_transfers.emplace_back(transfers_from);
+        continue;
+      }*/
+      auto const loc_from_idx = stop_from.location_idx();
+      // auto const loc_from_idx = loc_from_seq[stop_from_idx];
       auto const [transport_from_days, transport_from_mam] =
           tt.event_mam(route_idx_t{route_from_idx}, transport_from_idx,
                        stop_from_idx, event_type::kArr);
@@ -63,14 +88,14 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
       // +1 for the station itself
       // Station itself is not included in footpaths from them
       // TODO: Possibly check meta stations too
-      // TODO: Consider in_allowed and out_allowed for stop
       auto const loc_footpaths_from =
           tt.locations_.footpaths_out_[location_idx_t{loc_from_idx}];
-      auto const footpath_from_idx = 0U;
+      auto footpath_from_idx = 0U;
       // Iterate through all footpaths from
       while (footpath_from_idx != loc_footpaths_from.size() + 1) {
         // Pick up the station the footpath goes to
-        if (footpath_from_idx == loc_footpaths_from.size()) {
+        if (footpath_from_idx == loc_footpaths_from.size() ||
+            loc_footpaths_from.empty()) {
           loc_to_idx = location_idx_t{loc_from_idx};
           footpath_duration = duration_t{0U};
         } else {
@@ -79,6 +104,15 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
           footpath_duration =
               duration_t{loc_footpaths_from.at(footpath_from_idx).duration_};
         }
+
+        // Skip if in is not allowed
+        /*auto const stop_to = stop{loc_to_idx.v_};
+        std::cout << "In to stop " << stop_to.location_ << " is "
+                  << stop_to.in_allowed() << std::endl;
+        if (!stop_to.in_allowed()) {
+          continue;
+        }*/
+
         day_change = false;
         // Get mam for the trip from and add footpath
         auto const mam_at_stop_from =
@@ -124,9 +158,11 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               route_to_idx, stop_to_idx, event_type::kDep);
           // Set iterator on that to iterate through times
           auto const ev_time_range = it_range{
-              std::lower_bound(loc_to_ev_times.begin(), loc_to_ev_times.end(),
-                               mam_at_stop_from,
-                               [&](auto&& a, auto&& b) { return a.mam() < b; }),
+              linear_lb(loc_to_ev_times.begin(), loc_to_ev_times.end(),
+                        minutes_after_midnight_t{mam_at_stop_from},
+                        [&](delta const a, minutes_after_midnight_t b) {
+                          return a.mam() < b.count();
+                        }),
               loc_to_ev_times.end()};
           // TODO: iterator belongs to the earliest time on
           // station based on the arrival time?
@@ -136,8 +172,9 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
             day_change = true;
           }
           // Check if ea transport found
-          if (ea_time_it == end(ev_time_range) && !day_change) {
-            ea_time_it = begin(ev_time_range);
+          if ((ev_time_range.empty() || ea_time_it == end(ev_time_range)) &&
+              !day_change) {
+            ea_time_it = begin(loc_to_ev_times);
             day_change = true;
           }
           // get copy of earliest time to iterate later on it and keep
@@ -177,7 +214,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               u_turn_valid = false;
             }
             auto loc_to_next_idx = location_idx_t{0U};
-            if (loc_to_pos_it > route_to_stop_seq.end() - 2) {
+            if (loc_to_pos_it > route_to_stop_seq.end() - 2U) {
               u_turn_valid = false;
             }
             if (u_turn_valid) {
@@ -188,6 +225,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
             if (u_turn_valid && loc_from_prev_idx == loc_to_next_idx &&
                 stop_from_idx != 1U &&
                 loc_to_pos_it != route_to_stop_seq.end() - 2) {
+              std::cout << "U turn started\n";
               auto const [transport_from_prev_days, transport_from_prev_mam] =
                   tt.event_mam(route_idx_t{route_from_idx}, transport_from_idx,
                                stop_from_idx - 1, event_type::kArr);
@@ -223,15 +261,12 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               transfer_bf_cpy >>= day_diff;
               transfer_bf_cpy = ~transfer_bf_cpy;
               transfer_bf &= transfer_bf_cpy;
+              std::cout << "U turn ended\n";
             }  // End check U-turn
-
-            if (!transfer_bf.any()) {
-              continue;
-            }
 
             // for each stop p_k^u ...
             // Check for improvements
-            auto const loc_first_arrivals = tt.event_times_at_stop(
+            /*auto const loc_first_arrivals = tt.event_times_at_stop(
                 route_to_idx, stop_to_idx, event_type::kArr);
             auto const loc_first_arr = loc_first_arrivals[transport_to_offset];
             for (auto next_locs = loc_to_pos_it;
@@ -296,23 +331,35 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
             }  // End check improvements
 
             if (keep.any()) {
-              transport_from_bf_cpy &= ~keep;
+              transport_from_bf_cpy &= ~keep;*/
+            if (transfer_bf.any()) {
               auto const new_transfer =
                   transfer(transport_to_idx, stop_to_idx,
                            get_bitfield_idx(keep, tt), day_change);
-              transfers_from.push_back(new_transfer);
+              std::cout << "Added transfer from trip " << transport_from_idx
+                        << " to " << transport_to_idx << " with bitfield "
+                        << transfer_bf.to_string() << std::endl;
+              transfers_from.emplace_back(new_transfer);
+              std::cout << "Transfer pushed\n";
             }
-            // TODO: check correct assignment ea_time
+
             if (ea_time == end(ev_time_range) && !day_change) {
               day_change = true;
               ea_time = loc_to_ev_times.begin();
               continue;
             }
             ea_time++;
+
+            // special case when both event times point to the whole array
+            if (ea_time_it == loc_to_ev_times.begin() &&
+                ea_time == loc_to_ev_times.end()) {
+              break;
+            }
           }
         }
+        footpath_from_idx++;
       }
-      trip_transfers.push_back(transfers_from);
+      trip_transfers.emplace_back(transfers_from);
     }
     // Reverse transfers because we iterated in opposite direction of stops
     std::reverse(trip_transfers.begin(), trip_transfers.end());
@@ -323,8 +370,8 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
 }
 
 bitfield_idx_t update_time(
-    mutable_fws_multimap<location_idx_t,
-                         std::pair<minutes_after_midnight_t, bitfield>>& times,
+    std::vector<std::vector<std::pair<minutes_after_midnight_t, bitfield>>>&
+        times,
     location_idx_t l_idx,
     minutes_after_midnight_t new_time_on_l,
     const bitfield bf,
@@ -332,42 +379,44 @@ bitfield_idx_t update_time(
     timetable& tt) {
   auto bf_cpy = bf >> day_change;
   // check if empty
-  if (times[l_idx].empty()) {
+  if (times[l_idx.v_].empty()) {
     // insert
-    times[l_idx].emplace_back(new_time_on_l, bf_cpy);
+    times[l_idx.v_].emplace_back(std::make_pair(new_time_on_l, bf_cpy));
     return get_bitfield_idx(bf_cpy, tt);
-  } else {
-    auto equal = false;
-    auto improve = cista::bitset<512>();
-    auto temp_bf = cista::bitset<512>();
-    cista::bitset<512>* bf_on_l_time;
-    auto times_on_l = times[l_idx];
-    for (auto time_on_l_it = times_on_l.begin();
-         time_on_l_it <= times_on_l.end(); time_on_l_it++) {
-      bf_on_l_time = &time_on_l_it->second;
-      // if new time is earlier
-      if (new_time_on_l.count() < time_on_l_it->first.count()) {
-        temp_bf = *bf_on_l_time & ~(bf_cpy & *bf_on_l_time);
-        improve = improve | (*bf_on_l_time & ~temp_bf);
-        // keep time although the bitset is 0
-        time_on_l_it->second = temp_bf;
-      } else if (new_time_on_l.count() > time_on_l_it->first.count()) {
-        bf_cpy = bf_cpy & ~(bf_cpy & time_on_l_it->second);
-      } else {
-        bf_cpy = bf_cpy & ~(bf_cpy & time_on_l_it->second);
-        improve = improve | (bf_cpy & ~time_on_l_it->second);
-        time_on_l_it->second = bf_cpy | time_on_l_it->second;
-        equal = true;
-      }
-      if (!bf_cpy.any()) {
-        break;
-      }
-    }
-    if (!improve.any() && !equal) {
-      times[l_idx].emplace_back(new_time_on_l, bf_cpy);
-    }
-    return get_bitfield_idx(improve, tt);
   }
+  auto equal = false;
+  auto improve = cista::bitset<512>();
+  auto temp_bf = cista::bitset<512>();
+  cista::bitset<512> bf_on_l_cpy;
+  auto times_on_l = times[l_idx.v_];
+  for (auto [time_on_l, bf_on_l] : times_on_l) {
+    bf_on_l_cpy = bf_on_l;
+    // if new time is earlier
+    if (new_time_on_l.count() < time_on_l.count()) {
+      std::cout << "Time earlier\n";
+      temp_bf = bf_on_l_cpy & ~(bf_cpy & bf_on_l_cpy);
+      improve = improve | (bf_on_l_cpy & ~temp_bf);
+      // keep time although the bitset is 0
+      bf_on_l = temp_bf;
+    } else if (new_time_on_l.count() > time_on_l.count()) {
+      std::cout << "Time later\n";
+      bf_cpy = bf_cpy & ~(bf_cpy & bf_on_l);
+    } else {
+      std::cout << "Time equal\n";
+      bf_cpy = bf_cpy & ~(bf_cpy & bf_on_l);
+      improve = improve | (bf_cpy & ~bf_on_l);
+      bf_on_l = bf_cpy | bf_on_l;
+      equal = true;
+    }
+    if (!bf_cpy.any()) {
+      break;
+    }
+  }
+  if (!improve.any() && !equal) {
+    std::cout << "Added to location" << std::endl;
+    times[l_idx.v_].emplace_back(std::make_pair(new_time_on_l, bf_cpy));
+  }
+  return get_bitfield_idx(improve, tt);
 }
 
 const bitfield_idx_t get_bitfield_idx(bitfield const& b, timetable& tt) {

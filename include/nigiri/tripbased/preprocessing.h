@@ -15,8 +15,8 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt);
 
 // Help methods
 bitfield_idx_t update_time(
-    mutable_fws_multimap<location_idx_t,
-                         std::pair<minutes_after_midnight_t, bitfield>>& times,
+    std::vector<std::vector<std::pair<minutes_after_midnight_t, bitfield>>>&
+        times,
     location_idx_t l_idx,
     minutes_after_midnight_t new_time_on_l,
     const bitfield bf,
