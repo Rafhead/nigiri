@@ -140,9 +140,13 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
           // Get position of stop to in route sequence
           auto const route_to_stop_seq =
               tt.route_location_seq_[route_idx_t{route_to_idx}];
-          auto const loc_to_pos_it =
-              std::find(route_to_stop_seq.begin(), route_to_stop_seq.end(),
-                        loc_to_idx.v_);
+          auto loc_to_pos_idx = 0U;
+          for (auto idx = 0U; idx < route_to_stop_seq.size(); idx++) {
+            auto const stop_to = stop{route_to_stop_seq[idx]};
+            if (stop_to.location_idx() == loc_to_idx) {
+              loc_to_pos_idx = idx;
+            }
+          }
           // Set the current trips bitfields to its actual value and shift
           // b[t]' <-- ...
           transport_from_bf.set(
@@ -153,7 +157,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
 
           // Find the earliest trip for line L
           // Get a look on event times for current route
-          auto const stop_to_idx = loc_to_pos_it - route_to_stop_seq.begin();
+          auto const stop_to_idx = loc_to_pos_idx;
           auto const loc_to_ev_times = tt.event_times_at_stop(
               route_to_idx, stop_to_idx, event_type::kDep);
           // Set iterator on that to iterate through times
@@ -214,17 +218,17 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               u_turn_valid = false;
             }
             auto loc_to_next_idx = location_idx_t{0U};
-            if (loc_to_pos_it > route_to_stop_seq.end() - 2U) {
+            if (loc_to_pos_idx > route_to_stop_seq.size() - 2U) {
               u_turn_valid = false;
             }
             if (u_turn_valid) {
               loc_from_prev_idx =
                   location_idx_t{loc_from_seq[stop_from_idx - 1U]};
-              loc_to_next_idx = location_idx_t{*(loc_to_pos_it + 1)};
+              loc_to_next_idx = location_idx_t{loc_to_pos_idx + 1U};
             }
             if (u_turn_valid && loc_from_prev_idx == loc_to_next_idx &&
                 stop_from_idx != 1U &&
-                loc_to_pos_it != route_to_stop_seq.end() - 2) {
+                loc_to_pos_idx != route_to_stop_seq.size() - 2U) {
               std::cout << "U turn started\n";
               auto const [transport_from_prev_days, transport_from_prev_mam] =
                   tt.event_mam(route_idx_t{route_from_idx}, transport_from_idx,
