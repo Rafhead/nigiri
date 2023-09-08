@@ -299,8 +299,11 @@ private:
                uint8_t n_transfers,
                size_t day_idx) {
     if (stop_index < first_locs_[day_idx][t_idx.v_]) {
-      // todo: count numeric limits as end station
-      auto const latest_loc = first_locs_[day_idx][t_idx.v_];
+      auto latest_loc = first_locs_[day_idx][t_idx.v_];
+      if (latest_loc == std::numeric_limits<uint16_t>::max()) {
+        auto const route_stops = tt_.route_location_seq_[r_idx];
+        latest_loc = route_stops.size() - 1U;
+      }
       auto new_trip_segment =
           trip_segment(t_idx, stop_index, latest_loc, n_transfers, prev_idx,
                        prev_stop_idx, !day_idx);
