@@ -137,13 +137,13 @@ struct search {
     add_start_labels(q_.start_time_, true);
 
     while (true) {
-      trace("start_time={}\n", search_interval_);
+      /*trace("start_time={}\n", search_interval_);*/
 
       search_interval();
 
       if (is_ontrip() || max_interval_reached() ||
           n_results_in_interval() >= q_.min_connection_count_) {
-        trace(
+        /*trace(
             "  finished: is_ontrip={}, max_interval_reached={}, "
             "extend_earlier={}, extend_later={}, initial={}, interval={}, "
             "timetable={}, number_of_results_in_interval={}\n",
@@ -158,10 +158,11 @@ struct search {
                       return interval<unixtime_t>{start_time, start_time};
                     }},
                 q_.start_time_),
-            search_interval_, tt_.external_interval(), n_results_in_interval());
+            search_interval_, tt_.external_interval(),
+           n_results_in_interval());*/
         break;
       } else {
-        trace(
+        /*trace(
             "  continue: max_interval_reached={}, extend_earlier={}, "
             "extend_later={}, initial={}, interval={}, timetable={}, "
             "number_of_results_in_interval={}\n",
@@ -176,7 +177,8 @@ struct search {
                       return interval<unixtime_t>{start_time, start_time};
                     }},
                 q_.start_time_),
-            search_interval_, tt_.external_interval(), n_results_in_interval());
+            search_interval_, tt_.external_interval(),
+           n_results_in_interval());*/
       }
 
       state_.starts_.clear();
@@ -188,13 +190,13 @@ struct search {
           q_.extend_interval_later_
               ? tt_.external_interval().clamp(search_interval_.to_ + 60_minutes)
               : search_interval_.to_};
-      trace("interval adapted: {} -> {}\n", search_interval_, new_interval);
+      // trace("interval adapted: {} -> {}\n", search_interval_, new_interval);
 
       if (new_interval.from_ != search_interval_.from_) {
         add_start_labels(interval{new_interval.from_, search_interval_.from_},
                          kBwd);
         if constexpr (kBwd) {
-          trace("dir=BWD, interval extension earlier -> reset state\n");
+          // trace("dir=BWD, interval extension earlier -> reset state\n");
           algo_.reset_arrivals();
           remove_ontrip_results();
         }
@@ -204,7 +206,7 @@ struct search {
         add_start_labels(interval{search_interval_.to_, new_interval.to_},
                          kFwd);
         if constexpr (kFwd) {
-          trace("dir=BWD, interval extension later -> reset state\n");
+          // trace("dir=BWD, interval extension later -> reset state\n");
           algo_.reset_arrivals();
           remove_ontrip_results();
         }
@@ -309,8 +311,8 @@ private:
           algo_.next_start_time();
           auto const start_time = from_it->time_at_start_;
           for (auto const& s : it_range{from_it, to_it}) {
-            trace("init: time_at_start={}, time_at_stop={} at {}\n",
-                  s.time_at_start_, s.time_at_stop_, location_idx_t{s.stop_});
+            /*trace("init: time_at_start={}, time_at_stop={} at {}\n",
+                  s.time_at_start_, s.time_at_stop_, location_idx_t{s.stop_});*/
             algo_.add_start(s.stop_, s.time_at_stop_);
           }
 

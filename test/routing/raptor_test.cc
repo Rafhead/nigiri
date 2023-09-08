@@ -5,7 +5,9 @@
 
 #include "../loader/hrd/hrd_timetable.h"
 
+#include "nigiri/routing/search.h"
 #include "nigiri/tripbased/preprocessing.h"
+#include "nigiri/tripbased/tripbased.h"
 
 #include "../raptor_search.h"
 
@@ -47,8 +49,19 @@ leg 2: (B, 0000002) [2020-03-30 06:45] -> (C, 0000003) [2020-03-30 07:45]
 leg 3: (C, 0000003) [2020-03-30 07:45] -> (C, 0000003) [2020-03-30 07:45]
   FOOTPATH (duration=0)
 
-
 )";
+
+unixtime_t parse_time(std::string_view s, char const* format) {
+  std::stringstream in;
+  in << s;
+
+  date::local_seconds ls;
+  std::string tz;
+  in >> date::parse(format, ls, tz);
+
+  return std::chrono::time_point_cast<unixtime_t::duration>(
+      date::make_zoned(tz, ls).get_sys_time());
+}
 
 TEST(routing, tripbased) {
   constexpr auto const src = source_idx_t{0U};
@@ -59,10 +72,29 @@ TEST(routing, tripbased) {
   finalize(tt);
   tt.transfers_ = nigiri::tripbased::compute_transfers(tt);
 
-  auto const results = raptor_search(
+  using algo_state_t = nigiri::tripbased::tripbased_state;
+  static auto search_state = routing::search_state{};
+  static auto algo_state = algo_state_t{};
+
+  auto q = routing::query{
+      .start_time_ =
+          interval{unixtime_t{sys_days{2020_y / March / 30}} + 5_hours,
+                   unixtime_t{sys_days{2020_y / March / 30}} + 6_hours},
+      .start_ = {{tt.locations_.location_id_to_idx_.at({"0000001", src}),
+                  0_minutes, 0U}},
+      .destination_ = {{tt.locations_.location_id_to_idx_.at({"0000003", src}),
+                        0_minutes, 0U}}};
+
+  using algo_t = nigiri::tripbased::tripbased;
+  auto const results = *(routing::search<direction::kForward, algo_t>{
+      tt, nullptr, search_state, algo_state, std::move(q)}
+                             .execute()
+                             .journeys_);
+
+  /*auto const result = raptor_search(
       tt, nullptr, "0000001", "0000003",
       interval{unixtime_t{sys_days{2020_y / March / 30}} + 5_hours,
-               unixtime_t{sys_days{2020_y / March / 30}} + 6_hours});
+               unixtime_t{sys_days{2020_y / March / 30}} + 6_hours});*/
 
   std::stringstream ss;
   ss << "\n";

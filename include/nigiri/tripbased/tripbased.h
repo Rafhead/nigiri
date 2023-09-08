@@ -120,8 +120,12 @@ struct tripbased {
       // segment's stop, not relative to the first route's station
       auto const [day_on_r_start, mam_at_r_start] =
           tt_.event_mam(curr_segment.t_idx(), 0U, event_type::kDep);
-      auto const delta_on_seg_start = tt_.event_mam(
-          curr_segment.t_idx(), curr_segment.from(), event_type::kArr);
+      delta delta_on_seg_start =
+          tt_.event_mam(curr_segment.t_idx(), 0U, event_type::kDep);
+      if (curr_segment.from() != 0U) {
+        delta_on_seg_start = tt_.event_mam(
+            curr_segment.t_idx(), curr_segment.from(), event_type::kArr);
+      }
       auto const day_on_seg_start = delta_on_seg_start.days();
       auto const mam_on_seg_start = delta_on_seg_start.mam();
       auto const day_diff = day_on_seg_start - day_on_r_start;
@@ -151,6 +155,7 @@ struct tripbased {
           target_stop_idx =
               contains_target(curr_segment.from() + 1U, seg_stops.size() - 1U,
                               d_stop_idx, route_idx_t{dest_line_idx});
+          std::cout << "Target stop index is " << target_stop_idx << "\n";
           // Skip if segment's line not visiting target
           // Or if it's stop range doesn't contain target
           if (target_stop_idx == 512U) {
@@ -189,6 +194,7 @@ struct tripbased {
           }
           // Update min known time at destination
           abs_min_time = abs_time_target;
+          std::cout << "Near to add\n";
           // Add journey
           // Note: if there is a footpath from a station with target_stop_idx to
           // actual target station then it must be considered in reconstruction
@@ -199,6 +205,7 @@ struct tripbased {
               .dest_ = location_idx_t{seg_stops[target_stop_idx]},
               .transfers_ = curr_segment.n_transfers()});
           if (optimal) {
+            std::cout << "optimal found\n";
             auto new_best = best_on_target{
                 .segment_idx_ = seg_idx,
                 .day_ = q_day_ + curr_segment.on_query_day() - day_diff,
@@ -262,10 +269,12 @@ struct tripbased {
           auto const abs_transfer_day =
               (abs_transfer_day_from + transfer.day_change());
           // Check transfer active on specific day
-          if (!tt_.bitfields_[transfer.traffic_days()].test(
+          // TODO: fix
+          /*if (!tt_.bitfields_[transfer.traffic_days()].test(
                   to_idx(abs_transfer_day_from))) {
+            std::cout << "Transfer not added\n";
             continue;
-          }
+          }*/
           // Check 24 Hours rule
           auto const abs_time_on_transfer_stop = tt_.to_unixtime(
               (abs_transfer_day - delta_on_transfer_stop.days()),
@@ -275,6 +284,9 @@ struct tripbased {
             continue;
           }
 
+          std::cout << " Transfer to line "
+                    << tt_.transport_route_[to_transport_idx].v_ << " to stop "
+                    << to_stop_idx << " added\n";
           enqueue(tt_.transport_route_[to_transport_idx], to_transport_idx,
                   to_stop_idx, seg_idx, seg_stop_idx, n_transfers,
                   !(abs_transfer_day == q_day_));
@@ -304,6 +316,8 @@ private:
         auto const route_stops = tt_.route_location_seq_[r_idx];
         latest_loc = route_stops.size() - 1U;
       }
+      std::cout << "Added trip segment of line " << r_idx << " from "
+                << stop_index << " to " << latest_loc << "\n";
       auto new_trip_segment =
           trip_segment(t_idx, stop_index, latest_loc, n_transfers, prev_idx,
                        prev_stop_idx, !day_idx);
@@ -397,6 +411,8 @@ private:
 
         // If trip for this route was found
         if (ed_transport_idx != transport_idx_t::invalid()) {
+          std::cout << "Start trip of line " << r_idx
+                    << " enqueued and discovered on index " << i << "\n";
           enqueue(r_idx, transport_idx_t{ed_transport_idx}, i, 0U, 0U, 0,
                   trip_on_the_next_day);
         }
@@ -416,9 +432,12 @@ private:
           auto const route_stops = tt_.route_location_seq_[route_from_loc];
           // Find index of the location relative to route
           // Multiple same stations counted - circled routes
-          for (auto route_loc : route_stops) {
-            if (route_loc == i) {
-              stop_idx = route_loc;
+          for (auto idx = 0U; idx < route_stops.size(); idx++) {
+            auto const route_stop = stop{route_stops[idx]};
+            if (route_stop.location_idx().v_ == i) {
+              stop_idx = idx;
+              std::cout << "Stop idx " << stop_idx << " added to line "
+                        << route_from_loc.v_ << "\n";
               // Destination line visits target from is_dest directly
               is_dest_line_[route_from_loc.v_].emplace_back(
                   std::make_pair(stop_idx, location_idx_t{i}));
@@ -446,8 +465,10 @@ private:
             // Find index of the location relative to route
             // Multiple same stations counted - circled routes
             for (auto route_loc : route_stops) {
-              if (route_loc == from_loc_idx.v_) {
+              auto const route_stop = stop{route_loc};
+              if (route_stop.location_idx() == from_loc_idx) {
                 stop_idx = route_loc;
+                std::cout << "Added to is dest line with footpath\n";
                 is_dest_line_[route_from_loc.v_].emplace_back(
                     std::make_pair(stop_idx, location_idx_t{i}));
               }
@@ -465,8 +486,12 @@ private:
                              stop_idx_t target,
                              route_idx_t route_idx) {
     auto const route_stops = tt_.route_location_seq_[route_idx];
+    std::cout << "Searching " << target << " in interval "
+              << "[" << from << "," << to << "]\n";
     for (auto stop_idx = from; stop_idx <= to; stop_idx++) {
-      if (route_stops[stop_idx] == route_stops[target]) {
+      auto const route_stop = stop{route_stops[stop_idx]};
+      auto const tgt_stop = stop{route_stops[target]};
+      if (route_stop.location_idx() == tgt_stop.location_idx()) {
         return stop_idx;
       }
     }

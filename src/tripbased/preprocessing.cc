@@ -336,11 +336,11 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               auto const new_transfer =
                   transfer(transport_to_idx, stop_to_idx,
                            get_bitfield_idx(keep, tt), day_change);
-              std::cout << "Added transfer from trip " << transport_from_idx
+              /*std::cout << "Added transfer from trip " << transport_from_idx
                         << " to " << transport_to_idx << " with bitfield "
-                        << transfer_bf.to_string() << std::endl;
+                        << transfer_bf.to_string() << std::endl;*/
               transfers_from.emplace_back(new_transfer);
-              std::cout << "Transfer pushed\n";
+              // std::cout << "Transfer pushed\n";
             }
 
             if (ea_time == end(ev_time_range) && !day_change) {
@@ -393,16 +393,13 @@ bitfield_idx_t update_time(
     bf_on_l_cpy = bf_on_l;
     // if new time is earlier
     if (new_time_on_l.count() < time_on_l.count()) {
-      std::cout << "Time earlier\n";
       temp_bf = bf_on_l_cpy & ~(bf_cpy & bf_on_l_cpy);
       improve = improve | (bf_on_l_cpy & ~temp_bf);
       // keep time although the bitset is 0
       bf_on_l = temp_bf;
     } else if (new_time_on_l.count() > time_on_l.count()) {
-      std::cout << "Time later\n";
       bf_cpy = bf_cpy & ~(bf_cpy & bf_on_l);
     } else {
-      std::cout << "Time equal\n";
       bf_cpy = bf_cpy & ~(bf_cpy & bf_on_l);
       improve = improve | (bf_cpy & ~bf_on_l);
       bf_on_l = bf_cpy | bf_on_l;
@@ -413,7 +410,6 @@ bitfield_idx_t update_time(
     }
   }
   if (!improve.any() && !equal) {
-    std::cout << "Added to location" << std::endl;
     times[l_idx.v_].emplace_back(std::make_pair(new_time_on_l, bf_cpy));
   }
   return get_bitfield_idx(improve, tt);

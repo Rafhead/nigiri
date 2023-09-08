@@ -24,6 +24,7 @@ void reconstruct_journey(
     std::vector<std::vector<std::pair<location_idx_t, duration_t>>> const&
         is_dest,
     journey& j) {
+  std::cout << "Reconstructor called";
   // Iterate through best and find valid
   for (auto best : state.best_) {
     if (best.day_ == day_idx_t::invalid() ||
