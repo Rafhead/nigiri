@@ -32,7 +32,6 @@ struct tripbased {
 
   static constexpr bool kUseLowerBounds = true;
 
-  // TODO: remove transfers
   tripbased(timetable const& tt,
             rt_timetable const*,
             tripbased_state& state,
@@ -155,7 +154,6 @@ struct tripbased {
           target_stop_idx =
               contains_target(curr_segment.from() + 1U, seg_stops.size() - 1U,
                               d_stop_idx, route_idx_t{dest_line_idx});
-          std::cout << "Target stop index is " << target_stop_idx << "\n";
           // Skip if segment's line not visiting target
           // Or if it's stop range doesn't contain target
           if (target_stop_idx == 512U) {
@@ -194,7 +192,6 @@ struct tripbased {
           }
           // Update min known time at destination
           abs_min_time = abs_time_target;
-          std::cout << "Near to add\n";
           // Add journey
           // Note: if there is a footpath from a station with target_stop_idx to
           // actual target station then it must be considered in reconstruction
@@ -280,13 +277,10 @@ struct tripbased {
               (abs_transfer_day - delta_on_transfer_stop.days()),
               delta_on_transfer_stop.as_duration());
           if (abs_time_on_transfer_stop > abs_max_time) {
-            std::cout << "Transfer overflows 24 hours rule" << std::endl;
+            // std::cout << "Transfer overflows 24 hours rule" << std::endl;
             continue;
           }
 
-          std::cout << " Transfer to line "
-                    << tt_.transport_route_[to_transport_idx].v_ << " to stop "
-                    << to_stop_idx << " added\n";
           enqueue(tt_.transport_route_[to_transport_idx], to_transport_idx,
                   to_stop_idx, seg_idx, seg_stop_idx, n_transfers,
                   !(abs_transfer_day == q_day_));
@@ -316,8 +310,6 @@ private:
         auto const route_stops = tt_.route_location_seq_[r_idx];
         latest_loc = route_stops.size() - 1U;
       }
-      std::cout << "Added trip segment of line " << r_idx << " from "
-                << stop_index << " to " << latest_loc << "\n";
       auto new_trip_segment =
           trip_segment(t_idx, stop_index, latest_loc, n_transfers, prev_idx,
                        prev_stop_idx, !day_idx);
@@ -411,8 +403,6 @@ private:
 
         // If trip for this route was found
         if (ed_transport_idx != transport_idx_t::invalid()) {
-          std::cout << "Start trip of line " << r_idx
-                    << " enqueued and discovered on index " << i << "\n";
           enqueue(r_idx, transport_idx_t{ed_transport_idx}, i, 0U, 0U, 0,
                   trip_on_the_next_day);
         }
@@ -486,8 +476,6 @@ private:
                              stop_idx_t target,
                              route_idx_t route_idx) {
     auto const route_stops = tt_.route_location_seq_[route_idx];
-    std::cout << "Searching " << target << " in interval "
-              << "[" << from << "," << to << "]\n";
     for (auto stop_idx = from; stop_idx <= to; stop_idx++) {
       auto const route_stop = stop{route_stops[stop_idx]};
       auto const tgt_stop = stop{route_stops[target]};

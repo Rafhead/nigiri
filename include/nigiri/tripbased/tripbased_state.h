@@ -22,6 +22,7 @@ public:
         best.day_ = day_idx_t::invalid();
       }
     }
+    best_.emplace_back(b);
   }
 
   std::vector<best_on_target> best_;

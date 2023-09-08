@@ -5,6 +5,7 @@
 #include "nigiri/timetable.h"
 #include "nigiri/tripbased/tripbased_state.h"
 #include "nigiri/types.h"
+#include "utl/enumerate.h"
 
 namespace nigiri {
 struct timetable;
@@ -24,7 +25,8 @@ void reconstruct_journey(
     std::vector<std::vector<std::pair<location_idx_t, duration_t>>> const&
         is_dest,
     journey& j) {
-  std::cout << "Reconstructor called";
+  std::cout << "Reconstructor called\n";
+  std::cout << "Best size " << state.best_.size() << "\n";
   // Iterate through best and find valid
   for (auto best : state.best_) {
     if (best.day_ == day_idx_t::invalid() ||
@@ -37,8 +39,18 @@ void reconstruct_journey(
     auto seg = state.trip_segments_[best.segment_idx_];
     auto seg_route_idx = tt.transport_route_[seg.t_idx()];
     auto seg_stops = tt.route_location_seq_[seg_route_idx];
-    auto seg_l_idx = location_idx_t{seg_stops[best.stop_idx_]};
-    auto seg_from_l_idx = location_idx_t{seg_stops[seg.from()]};
+    auto seg_l_idx = location_idx_t{0U};
+    auto seg_from_l_idx = location_idx_t{0U};
+    for (auto [i, s] : utl::enumerate(seg_stops)) {
+      auto const seg_stop = stop{s};
+      if (i == best.stop_idx_) {
+        seg_l_idx = seg_stop.location_idx();
+      }
+      if (i == seg.from()) {
+        seg_from_l_idx = seg_stop.location_idx();
+      }
+    }
+
     // transport day as: day + on query day - days in trip since from stop
     auto seg_transport = nigiri::transport{
         .t_idx_ = seg.t_idx(),
@@ -95,8 +107,19 @@ void reconstruct_journey(
       auto prev_seg = state.trip_segments_[seg.prev_idx()];
       auto prev_seg_route_idx = tt.transport_route_[prev_seg.t_idx()];
       auto prev_seg_stops = tt.route_location_seq_[prev_seg_route_idx];
-      auto prev_to_l_idx = location_idx_t{prev_seg_stops[seg.prev_stop_idx()]};
-      auto prev_from_l_idx = location_idx_t{prev_seg_stops[seg.from()]};
+      // search for correct location indexes
+      auto prev_to_l_idx = location_idx_t{0U};
+      auto prev_from_l_idx = location_idx_t{0U};
+      for (auto [i, s] : utl::enumerate(prev_seg_stops)) {
+        auto const seg_stop = stop{s};
+        if (i == seg.prev_stop_idx()) {
+          prev_to_l_idx = seg_stop.location_idx();
+        }
+        if (i == seg.from()) {
+          prev_from_l_idx = seg_stop.location_idx();
+        }
+      }
+
       auto prev_seg_transport = nigiri::transport{
           .t_idx_ = seg.t_idx(),
           .day_ =
@@ -127,7 +150,14 @@ void reconstruct_journey(
       seg = prev_seg;
       seg_route_idx = tt.transport_route_[seg.t_idx()];
       seg_stops = tt.route_location_seq_[seg_route_idx];
-      seg_l_idx = location_idx_t{seg_stops[seg.from()]};
+      // search for correct location idx
+      seg_l_idx = location_idx_t{0U};
+      for (auto [i, s] : utl::enumerate(seg_stops)) {
+        auto const seg_stop = stop{s};
+        if (i == seg.from()) {
+          seg_l_idx = seg_stop.location_idx();
+        }
+      }
       seg_transport = prev_seg_transport;
       seg_dep_time_from =
           tt.event_time(seg_transport, seg.from(), event_type::kDep);
