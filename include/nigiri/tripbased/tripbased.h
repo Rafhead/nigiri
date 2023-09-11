@@ -88,8 +88,11 @@ struct tripbased {
     // TODO: check if 16 bit value types can fit the whole absolute time
     // abs_q_mam_ = minutes_after_midnight_t{day.v_ * 1440U} + mam;
     abs_q_mam_ = tt_.to_unixtime(day, mam);
-    std::cout << "Time on first station " << l << " is " << abs_q_mam_
+    std::cout << "\n\nTime on first station " << l << " is " << abs_q_mam_
               << std::endl;
+    std::cout << "Query day " << q_day_ << ", mam " << q_mam_ << std::endl;
+    std::cout << "External interval " << tt_.external_interval() << '\n';
+    std::cout << "EI size " << tt_.external_interval().size() << '\n';
 
     // for the first location
     enqueue_start_trips(l, duration_t{0U});
@@ -262,16 +265,27 @@ struct tripbased {
           auto const delta_on_transfer_stop =
               tt_.event_mam(to_transport_idx, to_stop_idx, event_type::kDep);
           auto const abs_transfer_day_from =
-              q_day_ + curr_segment.on_query_day();
+              q_day_ + curr_segment.on_query_day() + seg_day_diff_on_stop;
           auto const abs_transfer_day =
               (abs_transfer_day_from + transfer.day_change());
           // Check transfer active on specific day
-          // TODO: fix
+          // TODO: fix - ask how ranges less than 512 are mapped to 512 bitset
           /*if (!tt_.bitfields_[transfer.traffic_days()].test(
-                  to_idx(abs_transfer_day_from))) {
-            std::cout << "Transfer not added\n";
+                  to_idx(day_idx_t{511U} - abs_transfer_day_from))) {
+            *//*std::cout << "IID = " << tt_.internal_interval_days() << '\n';
+            std::cout << "IID size = " << tt_.internal_interval_days().size()
+                      << '\n';
+            std::cout << "II = " << tt_.internal_interval() << '\n';
+            std::cout << tt_.bitfields_[transfer.traffic_days()] << "\n";
+            std::cout << "Transfer day " << abs_transfer_day_from
+                      << ", day change " << transfer.day_change() << "\n";
+            std::cout << "Transfer from "
+                      << tt_.transport_route_[curr_segment.t_idx()] << " to "
+                      << tt_.transport_route_[to_transport_idx] << " to stop "
+                      << to_stop_idx << " was not added\n";*//*
             continue;
           }*/
+          std::cout << "Transfer added\n";
           // Check 24 Hours rule
           auto const abs_time_on_transfer_stop = tt_.to_unixtime(
               (abs_transfer_day - delta_on_transfer_stop.days()),
@@ -377,6 +391,8 @@ private:
         // Absolute max time as query time + 24 hours
         // Will not allow trips that start later than 24 hours after query start
         auto abs_ed_time = tt_.to_unixtime(q_day_ + day_idx_t{1U}, q_mam_);
+        std::cout << "Absolute ed time " << abs_ed_time << "\n";
+        std::cout << "Absolute q mam " << abs_q_mam_ << '\n';
         auto trip_on_the_next_day = 0U;
         for (auto const transport : transport_range) {
           auto const& transport_bitset =
@@ -391,7 +407,10 @@ private:
                 to_idx(q_day_ + day_offset - day_at_stop));
             auto const abs_dep_time = tt_.to_unixtime(
                 q_day_ + day_offset, minutes_after_midnight_t{mam_at_stop});
-            if (is_active && abs_dep_time < abs_ed_time) {
+            std::cout << "\tTransport " << transport << " with dep time "
+                      << abs_dep_time << " is " << is_active << '\n';
+            if (is_active && abs_dep_time < abs_ed_time &&
+                abs_dep_time >= abs_q_mam_) {
               ed_transport_idx = transport;
               abs_ed_time = abs_dep_time;
               if (day_offset > 0) {
@@ -403,6 +422,7 @@ private:
 
         // If trip for this route was found
         if (ed_transport_idx != transport_idx_t::invalid()) {
+          std::cout << "Start trip with abs dep time " << abs_ed_time << '\n';
           enqueue(r_idx, transport_idx_t{ed_transport_idx}, i, 0U, 0U, 0,
                   trip_on_the_next_day);
         }
@@ -426,8 +446,6 @@ private:
             auto const route_stop = stop{route_stops[idx]};
             if (route_stop.location_idx().v_ == i) {
               stop_idx = idx;
-              std::cout << "Stop idx " << stop_idx << " added to line "
-                        << route_from_loc.v_ << "\n";
               // Destination line visits target from is_dest directly
               is_dest_line_[route_from_loc.v_].emplace_back(
                   std::make_pair(stop_idx, location_idx_t{i}));
