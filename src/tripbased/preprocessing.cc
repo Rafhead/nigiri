@@ -140,7 +140,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
           // Get position of stop to in route sequence
           auto const route_to_stop_seq =
               tt.route_location_seq_[route_idx_t{route_to_idx}];
-          auto loc_to_pos_idx = 0U;
+          stop_idx_t loc_to_pos_idx = 0U;
           for (auto idx = 0U; idx < route_to_stop_seq.size(); idx++) {
             auto const stop_to = stop{route_to_stop_seq[idx]};
             if (stop_to.location_idx() == loc_to_idx) {
@@ -165,12 +165,14 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               linear_lb(loc_to_ev_times.begin(), loc_to_ev_times.end(),
                         minutes_after_midnight_t{mam_at_stop_from},
                         [&](delta const a, minutes_after_midnight_t b) {
-                          return a.mam() < b.count();
+                          return minutes_after_midnight_t{a.mam()} < b;
                         }),
               loc_to_ev_times.end()};
-          // TODO: iterator belongs to the earliest time on
-          // station based on the arrival time?
           auto ea_time_it = begin(ev_time_range);
+          if (ev_time_range.begin() == loc_to_ev_times.end()) {
+            ea_time_it = loc_to_ev_times.begin();
+          }
+
           // Check if footpath makes day change
           if (mam_at_stop_from / 1440U != transport_from_mam / 1440U) {
             day_change = true;
