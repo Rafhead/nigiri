@@ -131,6 +131,10 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
         // Iterate through all routes on current stop or on stops reachable by
         // footpath
         for (route_idx_t route_to_idx : tt.location_routes_[loc_to_idx]) {
+          // skip the same line
+          if (route_from_idx == route_to_idx) {
+            continue;
+          }
           // Skip route if it is his last station
           if (tt.route_location_seq_
                   [route_to_idx][tt.route_location_seq_[route_to_idx].size() -
@@ -151,7 +155,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
           // b[t]' <-- ...
           transport_from_bf.set(
               tt.bitfields_[transport_from_bf_idx].to_string());
-          auto transport_from_bf_cpy = bitset<512>(transport_from_bf);
+          auto transport_from_bf_cpy = bitset<bitsetSize>(transport_from_bf);
           transport_from_bf_cpy >>= (transport_from_days);
           day_change = false;
 
@@ -169,16 +173,16 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                         }),
               loc_to_ev_times.end()};
           auto ea_time_it = begin(ev_time_range);
-          if (ev_time_range.begin() == loc_to_ev_times.end()) {
+          /*if (ev_time_range.begin() == loc_to_ev_times.end()) {
             ea_time_it = loc_to_ev_times.begin();
-          }
+          }*/
 
           // Check if footpath makes day change
           if (mam_at_stop_from / 1440U != transport_from_mam / 1440U) {
             day_change = true;
           }
           // Check if ea transport found
-          if ((ev_time_range.empty() || ea_time_it == end(ev_time_range)) &&
+          if ((ev_time_range.empty() || ea_time_it == end(loc_to_ev_times)) &&
               !day_change) {
             ea_time_it = begin(loc_to_ev_times);
             day_change = true;
@@ -187,9 +191,15 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
           // original for comparison
           auto ea_time = ea_time_it;
 
+          if (debug) {
+            std::cout << "Checking next route\n";
+          }
           //  while...
           // TODO check ea_time != ...
-          while (transport_from_bf_cpy.any() && ea_time != ea_time_it - 1) {
+          while (transport_from_bf_cpy.any()) {
+            if (debug)
+              std::cout << "Looking at times " << transport_from_mam << " and "
+                        << ea_time->mam() << "\n";
             // transport to offset
             auto transport_to_offset =
                 static_cast<std::size_t>(&*ea_time - loc_to_ev_times.data());
@@ -200,21 +210,40 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
             transport_to_bf_idx = tt.transport_traffic_days_[transport_to_idx];
             // bitset of transport to
             auto const transport_to_bf = tt.bitfields_[transport_to_bf_idx];
+            if (debug) {
+              std::cout << "Transport from and to active on \n";
+              std::cout << transport_from_bf_cpy << std::endl;
+              std::cout << transport_to_bf << "\n";
+            }
             // event on stop to
             auto const event_on_stop_to = *ea_time;
             // [b_u]'
-            auto transport_to_bf_cpy = bitset<512>(transport_to_bf.to_string());
+            auto transport_to_bf_cpy =
+                bitset<bitsetSize>(transport_to_bf.to_string());
             // [b_u] >>> ...
             transport_to_bf_cpy >>= event_on_stop_to.days();
             transport_to_bf_cpy <<= day_change;
+            if (debug) {
+              std::cout << "Transport to after modifying - day change is "
+                        << day_change << ", days are "
+                        << event_on_stop_to.days() << std::endl;
+              std::cout << transport_to_bf_cpy << std::endl;
+            }
             // [b_tr] <-- ...
-            auto transfer_bf = bitset<512>(transport_from_bf_cpy.to_string());
+            auto transfer_bf = transport_from_bf_cpy;
             transfer_bf &= transport_to_bf_cpy;
-            auto keep = bitset<512>();
+            if (transfer_bf.any()) {
+              if (debug) {
+                std::cout << "Transfer bitfield is \n";
+                std::cout << transfer_bf << std::endl;
+              }
+            }
+            // auto keep = bitset<bitsetSize>();
+            auto keep = transfer_bf;
 
             // Check for U-turn
             // Check if u turn possible
-            auto u_turn_valid = true;
+            /*auto u_turn_valid = true;
             auto loc_from_prev_idx = location_idx_t{0U};
             if (stop_from_idx < 1U) {
               u_turn_valid = false;
@@ -268,7 +297,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               transfer_bf_cpy = ~transfer_bf_cpy;
               transfer_bf &= transfer_bf_cpy;
               std::cout << "U turn ended\n";
-            }  // End check U-turn
+            }*/  // End check U-turn
 
             // for each stop p_k^u ...
             // Check for improvements
@@ -334,11 +363,14 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                     next_locs_foot.at(next_locs_to_idx).target(), arr_to_time,
                     transfer_bf, day_change_footpath, tt)];
               }
-            }  // End check improvements
+            }*/  // End check improvements
 
             if (keep.any()) {
-              transport_from_bf_cpy &= ~keep;*/
-            if (transfer_bf.any()) {
+              transport_from_bf_cpy &= ~keep;
+              if (debug) {
+                std::cout << "Transport from bf copy after adding \n";
+                std::cout << transport_from_bf_cpy << std::endl;
+              }
               auto const new_transfer =
                   transfer(transport_to_idx, stop_to_idx,
                            get_bitfield_idx(keep, tt), day_change);
@@ -354,6 +386,12 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               ea_time = loc_to_ev_times.begin();
               continue;
             }
+
+            // Case when already day change occurred and iterated all times
+            if (ea_time == end(ev_time_range) && day_change) {
+              break;
+            }
+
             ea_time++;
 
             // special case when both event times point to the whole array
@@ -391,9 +429,9 @@ bitfield_idx_t update_time(
     return get_bitfield_idx(bf_cpy, tt);
   }
   auto equal = false;
-  auto improve = cista::bitset<512>();
-  auto temp_bf = cista::bitset<512>();
-  cista::bitset<512> bf_on_l_cpy;
+  auto improve = cista::bitset<bitsetSize>();
+  auto temp_bf = cista::bitset<bitsetSize>();
+  cista::bitset<bitsetSize> bf_on_l_cpy;
   auto times_on_l = times[l_idx.v_];
   for (auto [time_on_l, bf_on_l] : times_on_l) {
     bf_on_l_cpy = bf_on_l;
