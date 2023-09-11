@@ -7,6 +7,10 @@ namespace nigiri::tripbased {
 struct transfer {
   transfer() = default;
 
+  transfer(transport_idx_t const to) : to_transport_idx_{to_idx(to)} {
+    assert(to_idx(to) < (std::numeric_limits<std::uint32_t>::max() >> 4));
+  }
+
   transfer(transport_idx_t const to,
            unsigned const stop_idx,
            bitfield_idx_t const traffic_days_idx,

@@ -97,7 +97,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
         if (footpath_from_idx == loc_footpaths_from.size() ||
             loc_footpaths_from.empty()) {
           loc_to_idx = location_idx_t{loc_from_idx};
-          footpath_duration = duration_t{0U};
+          footpath_duration = tt.locations_.transfer_time_[loc_to_idx];
         } else {
           loc_to_idx =
               location_idx_t{loc_footpaths_from.at(footpath_from_idx).target_};
@@ -191,15 +191,11 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
           // original for comparison
           auto ea_time = ea_time_it;
 
-          if (debug) {
+          /*if (debug) {
             std::cout << "Checking next route\n";
-          }
+          }*/
           //  while...
-          // TODO check ea_time != ...
           while (transport_from_bf_cpy.any()) {
-            if (debug)
-              std::cout << "Looking at times " << transport_from_mam << " and "
-                        << ea_time->mam() << "\n";
             // transport to offset
             auto transport_to_offset =
                 static_cast<std::size_t>(&*ea_time - loc_to_ev_times.data());
@@ -210,6 +206,13 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
             transport_to_bf_idx = tt.transport_traffic_days_[transport_to_idx];
             // bitset of transport to
             auto const transport_to_bf = tt.bitfields_[transport_to_bf_idx];
+            if (debug) {
+              std::cout << "Looking at times from " << transport_from_idx
+                        << " at "
+                        << minutes_after_midnight_t{transport_from_mam}
+                        << " and to " << transport_to_idx << " at "
+                        << minutes_after_midnight_t{ea_time->mam()} << "\n";
+            }
             if (debug) {
               std::cout << "Transport from and to active on \n";
               std::cout << transport_from_bf_cpy << std::endl;
@@ -223,21 +226,21 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
             // [b_u] >>> ...
             transport_to_bf_cpy >>= event_on_stop_to.days();
             transport_to_bf_cpy <<= day_change;
-            if (debug) {
+            /*if (debug) {
               std::cout << "Transport to after modifying - day change is "
                         << day_change << ", days are "
                         << event_on_stop_to.days() << std::endl;
               std::cout << transport_to_bf_cpy << std::endl;
-            }
+            }*/
             // [b_tr] <-- ...
             auto transfer_bf = transport_from_bf_cpy;
             transfer_bf &= transport_to_bf_cpy;
-            if (transfer_bf.any()) {
+            /*if (transfer_bf.any()) {
               if (debug) {
                 std::cout << "Transfer bitfield is \n";
                 std::cout << transfer_bf << std::endl;
               }
-            }
+            }*/
             // auto keep = bitset<bitsetSize>();
             auto keep = transfer_bf;
 
@@ -370,15 +373,14 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               if (debug) {
                 std::cout << "Transport from bf copy after adding \n";
                 std::cout << transport_from_bf_cpy << std::endl;
+                std::cout << "Added transfer from trip " << transport_from_idx
+                          << " to " << transport_to_idx << " with bitfield "
+                          << transfer_bf.to_string() << std::endl;
               }
               auto const new_transfer =
                   transfer(transport_to_idx, stop_to_idx,
                            get_bitfield_idx(keep, tt), day_change);
-              /*std::cout << "Added transfer from trip " << transport_from_idx
-                        << " to " << transport_to_idx << " with bitfield "
-                        << transfer_bf.to_string() << std::endl;*/
               transfers_from.emplace_back(new_transfer);
-              // std::cout << "Transfer pushed\n";
             }
 
             if (ea_time == end(ev_time_range) && !day_change) {
@@ -403,7 +405,12 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
         }
         footpath_from_idx++;
       }
-      trip_transfers.emplace_back(transfers_from);
+      if (transfers_from.empty()) {
+        auto const new_transfer = transfer(transport_idx_t::invalid());
+        transfers_from.emplace_back(new_transfer);
+      } else {
+        trip_transfers.emplace_back(transfers_from);
+      }
     }
     // Reverse transfers because we iterated in opposite direction of stops
     std::reverse(trip_transfers.begin(), trip_transfers.end());
