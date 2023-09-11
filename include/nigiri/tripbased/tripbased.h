@@ -136,9 +136,10 @@ struct tripbased {
       auto const mam_on_seg_start = delta_on_seg_start.mam();
       auto const day_diff = day_on_seg_start - day_on_r_start;
       std::cout << "Day difference " << day_diff << '\n';
+
       // Absolute time on segment start
       auto const abs_time_on_seg_start =
-          tt_.to_unixtime(q_day_ + curr_segment.on_query_day() - day_diff,
+          tt_.to_unixtime(q_day_ + !curr_segment.on_query_day() - day_diff,
                           minutes_after_midnight_t{mam_on_seg_start});
       std::cout << "Abs time on seg start " << abs_time_on_seg_start << '\n';
       // Iterate through destination lines
@@ -153,7 +154,8 @@ struct tripbased {
           continue;
         }
 
-        std::cout << "Segment " << seg_idx << " is dest line\n";
+        std::cout << "Segment " << seg_idx << ", t_idx " << curr_segment.t_idx()
+                  << " - is dest line\n";
 
         // Iterate through dest_line stops and check every stop's arrival times
         // Case when line can visit multiple targets considered
@@ -167,6 +169,7 @@ struct tripbased {
           // Skip if segment's line not visiting target
           // Or if it's stop range doesn't contain target
           if (target_stop_idx == 512U) {
+            std::cout << "Segment line doesn't visit target\n";
             continue;
           }
           // Calculate footpath from segment's stop to target dest_l_idx
@@ -192,6 +195,7 @@ struct tripbased {
                                        (delta_on_target.as_duration() -
                                         delta_on_seg_start.as_duration()) +
                                        dest_footpath;
+          std::cout << "Abs time on target " << abs_time_target << '\n';
           // Check if arrival time better than currently known
           if (abs_time_target >= abs_min_time) {
             continue;
@@ -202,6 +206,8 @@ struct tripbased {
           }
           // Update min known time at destination
           abs_min_time = abs_time_target;
+          std::cout << "Min time on target updated to " << abs_time_target
+                    << '\n';
           // Add journey
           // Note: if there is a footpath from a station with target_stop_idx to
           // actual target station then it must be considered in reconstruction
@@ -215,7 +221,7 @@ struct tripbased {
             std::cout << "optimal found\n";
             auto new_best = best_on_target{
                 .segment_idx_ = seg_idx,
-                .day_ = q_day_ + curr_segment.on_query_day() - day_diff,
+                .day_ = q_day_ + !curr_segment.on_query_day() - day_diff,
                 .stop_idx_ = target_stop_idx,
                 .start_time_ = start_time,
                 .abs_time_on_target_ = abs_time_target,
@@ -285,9 +291,12 @@ struct tripbased {
           auto const delta_on_transfer_stop =
               tt_.event_mam(to_transport_idx, to_stop_idx, event_type::kDep);
           auto const abs_transfer_day_from =
-              q_day_ + curr_segment.on_query_day() + seg_day_diff_on_stop;
+              q_day_ + !curr_segment.on_query_day() + seg_day_diff_on_stop;
+          std::cout << "Abs transfer day from " << abs_transfer_day_from
+                    << '\n';
           auto const abs_transfer_day =
               (abs_transfer_day_from + transfer.day_change());
+          std::cout << "Abs transfer day " << abs_transfer_day << '\n';
           // Check transfer active on specific day
           // TODO: fix - ask how ranges less than 512 are mapped to 512 bitset
           /*if (!tt_.bitfields_[transfer.traffic_days()].test(
@@ -426,6 +435,7 @@ private:
               tt_.event_mam(transport, i, event_type::kDep);
           // Check trips on the current day and day + 1
           // If footpath makes day change then only look at day + 1
+          trip_on_the_next_day = 0U;
           for (auto day_offset = day_idx_t{day_change}; day_offset < 2;
                day_offset++) {
             auto const is_active = transport_bitset.test(
@@ -436,9 +446,12 @@ private:
                       << abs_dep_time << " is " << is_active << '\n';*/
             if (is_active && abs_dep_time < abs_ed_time &&
                 abs_dep_time >= abs_q_mam_) {
+              std::cout << "\tTransport " << transport << " with dep time "
+                        << abs_dep_time << " is " << is_active << '\n';
               ed_transport_idx = transport;
               abs_ed_time = abs_dep_time;
               if (day_offset > 0) {
+                std::cout << "trip on the next day set\n";
                 trip_on_the_next_day = 1U;
               }
             }
@@ -447,8 +460,8 @@ private:
 
         // If trip for this route was found
         if (ed_transport_idx != transport_idx_t::invalid()) {
-          // std::cout << "Start trip with abs dep time " << abs_ed_time <<
-          // '\n';
+          std::cout << "Start trip with abs dep time " << abs_ed_time
+                    << ", on next day " << trip_on_the_next_day << '\n';
           enqueue(r_idx, transport_idx_t{ed_transport_idx}, i, 0U, 0U, 0,
                   trip_on_the_next_day);
         }
