@@ -177,6 +177,11 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
             ea_time_it = loc_to_ev_times.begin();
           }*/
 
+          for (auto ev : loc_to_ev_times) {
+            std::cout << ev.mam() << ", ";
+          }
+          std::cout << "\n\n";
+
           // Check if footpath makes day change
           if (mam_at_stop_from / 1440U != transport_from_mam / 1440U) {
             day_change = true;
