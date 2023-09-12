@@ -195,8 +195,8 @@ struct tripbased {
                                        (delta_on_target.as_duration() -
                                         delta_on_seg_start.as_duration()) +
                                        dest_footpath;
-          std::cout << "Abs time on target " << abs_time_target << '\n';
-          // Check if arrival time better than currently known
+          // std::cout << "Abs time on target " << abs_time_target << '\n';
+          //  Check if arrival time better than currently known
           if (abs_time_target >= abs_min_time) {
             continue;
           }
@@ -206,8 +206,8 @@ struct tripbased {
           }
           // Update min known time at destination
           abs_min_time = abs_time_target;
-          std::cout << "Min time on target updated to " << abs_time_target
-                    << '\n';
+          /*std::cout << "Min time on target updated to " << abs_time_target
+                    << '\n';*/
           // Add journey
           // Note: if there is a footpath from a station with target_stop_idx to
           // actual target station then it must be considered in reconstruction
@@ -250,11 +250,11 @@ struct tripbased {
         // Absolute time on the segment's stop
         auto const delta_on_seg_stop =
             tt_.event_mam(curr_segment.t_idx(), seg_stop_idx, event_type::kArr);
-        auto const abs_time_seq_stop =
+        /*auto const abs_time_seq_stop =
             abs_time_on_seg_start + (delta_on_seg_stop.as_duration() -
                                      delta_on_seg_start.as_duration());
-        std::cout << "Abs time on seg stop " << abs_time_seq_stop << '\n';
-        // Difference between first and current segment's stop in days
+        std::cout << "Abs time on seg stop " << abs_time_seq_stop << '\n';*/
+        //  Difference between first and current segment's stop in days
         auto const seg_day_diff_on_stop =
             delta_on_seg_stop.days() / 1440U - day_on_seg_start / 1440U;
         if (seg_day_diff_on_stop >= 1 && !curr_segment.on_query_day()) {
@@ -271,7 +271,8 @@ struct tripbased {
             break;
           }
           std::cout << "Transfers size "
-                    << tt_.transfers_.at(curr_segment.t_idx().v_, seg_stop_idx)
+                    << tt_.transfers_
+                           .at(curr_segment.t_idx().v_ - 1U, seg_stop_idx)
                            .size();
           std::cout << "\t Check transfer from stop " << seg_stop_idx
                     << ", route " << tt_.transport_route_[curr_segment.t_idx()]
@@ -292,13 +293,13 @@ struct tripbased {
               tt_.event_mam(to_transport_idx, to_stop_idx, event_type::kDep);
           auto const abs_transfer_day_from =
               q_day_ + !curr_segment.on_query_day() + seg_day_diff_on_stop;
-          std::cout << "Abs transfer day from " << abs_transfer_day_from
-                    << '\n';
+          /*std::cout << "Abs transfer day from " << abs_transfer_day_from
+                    << '\n';*/
           auto const abs_transfer_day =
               (abs_transfer_day_from + transfer.day_change());
-          std::cout << "Abs transfer day " << abs_transfer_day << '\n';
-          // Check transfer active on specific day
-          // TODO: fix - ask how ranges less than 512 are mapped to 512 bitset
+          // std::cout << "Abs transfer day " << abs_transfer_day << '\n';
+          //  Check transfer active on specific day
+          //  TODO: fix - ask how ranges less than 512 are mapped to 512 bitset
           /*if (!tt_.bitfields_[transfer.traffic_days()].test(
                   to_idx(day_idx_t{511U} - abs_transfer_day_from))) {
             *//*std::cout << "IID = " << tt_.internal_interval_days() << '\n';
@@ -314,13 +315,14 @@ struct tripbased {
                       << to_stop_idx << " was not added\n";*//*
             continue;
           }*/
-          std::cout << "Transfer added\n";
-          // Check 24 Hours rule
+          // std::cout << "Transfer added\n";
+          //  Check 24 Hours rule
           auto const abs_time_on_transfer_stop = tt_.to_unixtime(
               (abs_transfer_day - delta_on_transfer_stop.days()),
               delta_on_transfer_stop.as_duration());
-          std::cout << "Abs time on transfer stop " << abs_time_on_transfer_stop
-                    << '\n';
+          /*std::cout << "Abs time on transfer stop " <<
+             abs_time_on_transfer_stop
+                    << '\n';*/
           if (abs_time_on_transfer_stop > abs_max_time) {
             // std::cout << "Transfer overflows 24 hours rule" << std::endl;
             continue;
@@ -355,9 +357,10 @@ private:
         auto const route_stops = tt_.route_location_seq_[r_idx];
         latest_loc = route_stops.size() - 1U;
       }
-      std::cout << "Added trip segment of transport " << t_idx << " from stop "
+      /*std::cout << "Added trip segment of transport " << t_idx << " from stop
+         "
                 << stop_index << " to " << latest_loc << ", transfers "
-                << n_transfers << ", on query d " << !day_idx << '\n';
+                << n_transfers << ", on query d " << !day_idx << '\n';*/
       auto new_trip_segment =
           trip_segment(t_idx, stop_index, latest_loc, n_transfers, prev_idx,
                        prev_stop_idx, !day_idx);
@@ -446,12 +449,11 @@ private:
                       << abs_dep_time << " is " << is_active << '\n';*/
             if (is_active && abs_dep_time < abs_ed_time &&
                 abs_dep_time >= abs_q_mam_) {
-              std::cout << "\tTransport " << transport << " with dep time "
-                        << abs_dep_time << " is " << is_active << '\n';
+              /*std::cout << "\tTransport " << transport << " with dep time "
+                        << abs_dep_time << " is " << is_active << '\n';*/
               ed_transport_idx = transport;
               abs_ed_time = abs_dep_time;
               if (day_offset > 0) {
-                std::cout << "trip on the next day set\n";
                 trip_on_the_next_day = 1U;
               }
             }
@@ -460,8 +462,8 @@ private:
 
         // If trip for this route was found
         if (ed_transport_idx != transport_idx_t::invalid()) {
-          std::cout << "Start trip with abs dep time " << abs_ed_time
-                    << ", on next day " << trip_on_the_next_day << '\n';
+          /*std::cout << "Start trip with abs dep time " << abs_ed_time
+                    << ", on next day " << trip_on_the_next_day << '\n';*/
           enqueue(r_idx, transport_idx_t{ed_transport_idx}, i, 0U, 0U, 0,
                   trip_on_the_next_day);
         }

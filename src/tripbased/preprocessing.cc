@@ -5,6 +5,9 @@
 namespace nigiri::tripbased {
 
 nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
+
+  auto transfer_size = 0U;
+
   // Transfers
   nvec<std::uint32_t, transfer, 2> transfers;
   bitfield transport_from_bf;
@@ -18,7 +21,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
   // minutes_after_midnight_t transport_to_mam;
   // Whether after transfer to u and traversing next station a footpath can make
   // day change
-  // bool day_change_footpath;
+  bool day_change_footpath;
 
   // auto bitfields = hash_map<bitfield, bitfield_idx_t>{};
   for (auto const [i, bf] : utl::enumerate(tt.bitfields_)) {
@@ -173,14 +176,11 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                         }),
               loc_to_ev_times.end()};
           auto ea_time_it = begin(ev_time_range);
-          /*if (ev_time_range.begin() == loc_to_ev_times.end()) {
-            ea_time_it = loc_to_ev_times.begin();
-          }*/
 
-          for (auto ev : loc_to_ev_times) {
+          /*for (auto ev : loc_to_ev_times) {
             std::cout << ev.mam() << ", ";
           }
-          std::cout << "\n\n";
+          std::cout << "\n\n";*/
 
           // Check if footpath makes day change
           if (mam_at_stop_from / 1440U != transport_from_mam / 1440U) {
@@ -246,12 +246,12 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                 std::cout << transfer_bf << std::endl;
               }
             }*/
-            // auto keep = bitset<bitsetSize>();
-            auto keep = transfer_bf;
+            auto keep = bitset<bitsetSize>();
+            // keep = transfer_bf;
 
             // Check for U-turn
             // Check if u turn possible
-            /*auto u_turn_valid = true;
+            auto u_turn_valid = true;
             auto loc_from_prev_idx = location_idx_t{0U};
             if (stop_from_idx < 1U) {
               u_turn_valid = false;
@@ -305,23 +305,26 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               transfer_bf_cpy = ~transfer_bf_cpy;
               transfer_bf &= transfer_bf_cpy;
               std::cout << "U turn ended\n";
-            }*/  // End check U-turn
+            }  // End check U-turn
 
             // for each stop p_k^u ...
             // Check for improvements
-            /*auto const loc_first_arrivals = tt.event_times_at_stop(
+            auto const loc_first_arrivals = tt.event_times_at_stop(
                 route_to_idx, stop_to_idx, event_type::kArr);
             auto const loc_first_arr = loc_first_arrivals[transport_to_offset];
-            for (auto next_locs = loc_to_pos_it;
-                 next_locs < route_to_stop_seq.end(); ++next_locs) {
+            for (auto next_loc = loc_to_pos_idx;
+                 next_loc < route_to_stop_seq.size(); next_loc++) {
               // TODO: check use of ea_time on the next stations
+              auto const next_stop = stop{route_to_stop_seq[next_loc]};
               auto const loc_after_arrivals = tt.event_times_at_stop(
-                  route_to_idx, *next_locs, event_type::kArr);
+                  route_to_idx, next_loc, event_type::kArr);
+              // Arrival on stop p_k^u
               auto const loc_after_arr =
                   loc_after_arrivals[transport_to_offset];
               // 24 hours check
-              if (footpath_duration.count() % 1440 + loc_after_arr.count() -
-                      loc_first_arr.count() >
+              if (footpath_duration.count() % 1440 +
+                      loc_after_arr.as_duration().count() -
+                      loc_first_arr.as_duration().count() >
                   1440) {
                 break;
               }
@@ -331,47 +334,41 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                 day_change = 1;
               }
               keep |= tt.bitfields_[update_time(
-                  arrival_times, location_idx_t{*next_locs},
-                  minutes_after_midnight_t{
-                      (*(ea_time + (next_locs - loc_to_pos_it))).mam()} %
-                      1440,
-                  transfer_bf, day_change, tt)];
+                  arrival_times, next_stop.location_idx(),
+                  minutes_after_midnight_t{loc_after_arr.mam()}, transfer_bf,
+                  day_change, tt)];
+
               // Iter through footpaths
               auto const next_locs_foot =
-                  tt.locations_.footpaths_out_[location_idx_t{*next_locs}];
-              for (size_t next_locs_to_idx = 0;
-                   next_locs_to_idx != next_locs_foot.size();
-                   ++next_locs_to_idx) {
+                  tt.locations_.footpaths_out_[next_stop.location_idx()];
+              for (auto const [tgt, f_dur] : next_locs_foot) {
                 day_change_footpath = day_change;
-                auto const arr_to_time =
-                    (minutes_after_midnight_t{(*ea_time).mam()} +
-                     next_locs_foot.at(next_locs_to_idx).duration()) %
-                    1440;
+                // Arr to stop reachable by footpath
+                auto const arr_to_delta =
+                    loc_after_arr.as_duration() + duration_t{f_dur};
                 // 24 hours check
-                if (footpath_duration.count() % 1440 + loc_after_arr.count() +
-                        next_locs_foot.at(next_locs_to_idx).duration().count() -
-                        loc_first_arr.count() >
-                    1440) {
+                if (footpath_duration.count() % 1440U + arr_to_delta.count() -
+                        loc_first_arr.as_duration().count() >
+                    1440U) {
                   continue;
                 }
                 day_change_footpath = day_change;
                 // check if footpath makes day change
                 if (!day_change_footpath &&
-                    (loc_after_arr.count() +
-                     next_locs_foot.at(next_locs_to_idx).duration().count()) %
-                            1440 <=
-                        mam_at_stop_from) {
+                    arr_to_delta.count() % 1440 <= mam_at_stop_from) {
                   day_change_footpath = 1;
                 }
+
+                auto const arr_to_f_mam =
+                    minutes_after_midnight_t{arr_to_delta.count() % 1440U};
                 keep |= tt.bitfields_[update_time(
-                    arrival_times, next_locs_foot.at(next_locs_to_idx).target(),
-                    arr_to_time, transfer_bf, day_change_footpath, tt)];
+                    arrival_times, location_idx_t{tgt}, arr_to_f_mam,
+                    transfer_bf, day_change_footpath, tt)];
                 keep |= tt.bitfields_[update_time(
-                    ea_change_times,
-                    next_locs_foot.at(next_locs_to_idx).target(), arr_to_time,
+                    ea_change_times, location_idx_t{tgt}, arr_to_f_mam,
                     transfer_bf, day_change_footpath, tt)];
               }
-            }*/  // End check improvements
+            }  // End check improvements
 
             if (keep.any()) {
               transport_from_bf_cpy &= ~keep;
@@ -386,6 +383,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                   transfer(transport_to_idx, stop_to_idx,
                            get_bitfield_idx(keep, tt), day_change);
               transfers_from.emplace_back(new_transfer);
+              transfer_size++;
             }
 
             if (ea_time == end(ev_time_range) && !day_change) {
@@ -413,6 +411,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
       if (transfers_from.empty()) {
         auto const new_transfer = transfer(transport_idx_t::invalid());
         transfers_from.emplace_back(new_transfer);
+        continue;
       } else {
         trip_transfers.emplace_back(transfers_from);
       }
@@ -421,7 +420,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
     std::reverse(trip_transfers.begin(), trip_transfers.end());
     transfers.emplace_back(trip_transfers);
   }
-
+  std::cout << "Transfers amount " << transfer_size << " transfers\n";
   return transfers;
 }
 
@@ -457,7 +456,7 @@ bitfield_idx_t update_time(
       bf_cpy = bf_cpy & ~(bf_cpy & bf_on_l);
     } else {
       bf_cpy = bf_cpy & ~(bf_cpy & bf_on_l);
-      improve = improve | (bf_cpy & ~bf_on_l);
+      improve = improve | bf_cpy;
       bf_on_l = bf_cpy | bf_on_l;
       equal = true;
     }
@@ -465,7 +464,7 @@ bitfield_idx_t update_time(
       break;
     }
   }
-  if (!improve.any() && !equal) {
+  if (improve.any() && !equal) {
     times[l_idx.v_].emplace_back(std::make_pair(new_time_on_l, bf_cpy));
   }
   return get_bitfield_idx(improve, tt);
