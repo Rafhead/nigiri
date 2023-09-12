@@ -21,7 +21,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
   // minutes_after_midnight_t transport_to_mam;
   // Whether after transfer to u and traversing next station a footpath can make
   // day change
-  bool day_change_footpath;
+  // bool day_change_footpath;
 
   // auto bitfields = hash_map<bitfield, bitfield_idx_t>{};
   for (auto const [i, bf] : utl::enumerate(tt.bitfields_)) {
@@ -57,6 +57,9 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
     }
     ea_change_times.clear();
     ea_change_times.resize(tt.n_locations());
+    for (auto change_time : ea_change_times) {
+      change_time.resize(0);
+    }
 
     auto const route_from_idx = tt.transport_route_[transport_from_idx];
 
@@ -247,11 +250,11 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               }
             }*/
             auto keep = bitset<bitsetSize>();
-            // keep = transfer_bf;
+            keep = transfer_bf;
 
             // Check for U-turn
             // Check if u turn possible
-            auto u_turn_valid = true;
+            /*auto u_turn_valid = true;
             auto loc_from_prev_idx = location_idx_t{0U};
             if (stop_from_idx < 1U) {
               u_turn_valid = false;
@@ -314,7 +317,6 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
             auto const loc_first_arr = loc_first_arrivals[transport_to_offset];
             for (auto next_loc = loc_to_pos_idx;
                  next_loc < route_to_stop_seq.size(); next_loc++) {
-              // TODO: check use of ea_time on the next stations
               auto const next_stop = stop{route_to_stop_seq[next_loc]};
               auto const loc_after_arrivals = tt.event_times_at_stop(
                   route_to_idx, next_loc, event_type::kArr);
@@ -368,7 +370,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                     ea_change_times, location_idx_t{tgt}, arr_to_f_mam,
                     transfer_bf, day_change_footpath, tt)];
               }
-            }  // End check improvements
+            }*/  // End check improvements
 
             if (keep.any()) {
               transport_from_bf_cpy &= ~keep;

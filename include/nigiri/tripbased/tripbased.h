@@ -85,7 +85,6 @@ struct tripbased {
     auto const [day, mam] = tt_.day_idx_mam(t);
     q_day_ = day;
     q_mam_ = mam;
-    // TODO: check if 16 bit value types can fit the whole absolute time
     // abs_q_mam_ = minutes_after_midnight_t{day.v_ * 1440U} + mam;
     abs_q_mam_ = tt_.to_unixtime(day, mam);
     std::cout << "\n\nTime on first station " << l << " is " << abs_q_mam_
@@ -270,10 +269,6 @@ struct tripbased {
           if (transfer.to() == transport_idx_t::invalid()) {
             break;
           }
-          std::cout << "Transfers size "
-                    << tt_.transfers_
-                           .at(curr_segment.t_idx().v_ - 1U, seg_stop_idx)
-                           .size();
           std::cout << "\t Check transfer from stop " << seg_stop_idx
                     << ", route " << tt_.transport_route_[curr_segment.t_idx()]
                     << ", transport " << curr_segment.t_idx() << " to "
@@ -299,22 +294,41 @@ struct tripbased {
               (abs_transfer_day_from + transfer.day_change());
           // std::cout << "Abs transfer day " << abs_transfer_day << '\n';
           //  Check transfer active on specific day
-          //  TODO: fix - ask how ranges less than 512 are mapped to 512 bitset
-          /*if (!tt_.bitfields_[transfer.traffic_days()].test(
-                  to_idx(day_idx_t{511U} - abs_transfer_day_from))) {
-            *//*std::cout << "IID = " << tt_.internal_interval_days() << '\n';
+          if (tt_.bitfields_[transfer.traffic_days()].test(
+                  to_idx(day_idx_t{512U} - abs_transfer_day_from - 1U))) {
+            /*std::cout << "IID = " << tt_.internal_interval_days() << '\n';
             std::cout << "IID size = " << tt_.internal_interval_days().size()
                       << '\n';
-            std::cout << "II = " << tt_.internal_interval() << '\n';
-            std::cout << tt_.bitfields_[transfer.traffic_days()] << "\n";
+            std::cout << "II = " << tt_.internal_interval() << '\n';*/
+            /*std::cout << tt_.bitfields_[transfer.traffic_days()] << "\n";
+            std::cout
+                << "Bifield length: "
+                << tt_.bitfields_[transfer.traffic_days()].to_string().size()
+                << '\n';
+            std::cout << "Bifield on "
+                      << to_idx(day_idx_t{512U} - abs_transfer_day_from - 1U)
+                      << " is "
+                      << tt_.bitfields_[transfer.traffic_days()][to_idx(
+                             day_idx_t{512U} - abs_transfer_day_from - 1U)]
+                      << '\n';
+            auto ss = 0;
+            for (auto s : tt_.bitfields_[transfer.traffic_days()].to_string()) {
+              if (s == '1') {
+                std::cout << "Active on " << ss << '\n';
+              }
+              ss++;
+            }
             std::cout << "Transfer day " << abs_transfer_day_from
                       << ", day change " << transfer.day_change() << "\n";
-            std::cout << "Transfer from "
+            std::cout << "Index "
+                      << to_idx(day_idx_t{512U} - abs_transfer_day_from - 1U)
+                      << " was checked \n";*/
+            /*std::cout << "Transfer from "
                       << tt_.transport_route_[curr_segment.t_idx()] << " to "
                       << tt_.transport_route_[to_transport_idx] << " to stop "
-                      << to_stop_idx << " was not added\n";*//*
+                      << to_stop_idx << " was not added\n";*/
             continue;
-          }*/
+          }
           // std::cout << "Transfer added\n";
           //  Check 24 Hours rule
           auto const abs_time_on_transfer_stop = tt_.to_unixtime(
@@ -382,7 +396,6 @@ private:
         // TODO: Potentially count multiple same stations in route plan
         auto const [next_transport_day_at_stop, next_transport_mam_at_stop] =
             tt_.event_mam(transport, stop_index, event_type::kDep);
-        // TODO: check correctness
         if (next_transport_bitset.test(to_idx(
                 q_day_ - next_transport_day_at_stop + day_idx_t{day_idx})) &&
             next_transport_mam_at_stop >= mam_at_stop) {
@@ -500,7 +513,6 @@ private:
             tt_.locations_.get(location_idx_t{i}).footpaths_in_;
         auto duration = duration_t{0U};
         auto from_loc_idx = location_idx_t{0U};
-        // TODO: meta stations? start_times.cc
         for (auto footpath : footpaths_in) {
           duration = footpath.duration();
           from_loc_idx = footpath.target();
