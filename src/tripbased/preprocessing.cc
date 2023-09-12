@@ -21,7 +21,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
   // minutes_after_midnight_t transport_to_mam;
   // Whether after transfer to u and traversing next station a footpath can make
   // day change
-  // bool day_change_footpath;
+  bool day_change_footpath;
 
   // auto bitfields = hash_map<bitfield, bitfield_idx_t>{};
   for (auto const [i, bf] : utl::enumerate(tt.bitfields_)) {
@@ -250,11 +250,11 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               }
             }*/
             auto keep = bitset<bitsetSize>();
-            keep = transfer_bf;
+            // keep = transfer_bf;
 
             // Check for U-turn
             // Check if u turn possible
-            /*auto u_turn_valid = true;
+            auto u_turn_valid = true;
             auto loc_from_prev_idx = location_idx_t{0U};
             if (stop_from_idx < 1U) {
               u_turn_valid = false;
@@ -370,7 +370,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                     ea_change_times, location_idx_t{tgt}, arr_to_f_mam,
                     transfer_bf, day_change_footpath, tt)];
               }
-            }*/  // End check improvements
+            }  // End check improvements
 
             if (keep.any()) {
               transport_from_bf_cpy &= ~keep;

@@ -20,6 +20,8 @@ struct timetable;
 
 namespace nigiri::tripbased {
 
+constexpr bool debug_ea = false;
+
 struct tripbased_stats {
   std::uint64_t n_trip_segments_visited_{0ULL};
   std::uint64_t n_footpaths_visited_{0ULL};
@@ -85,13 +87,14 @@ struct tripbased {
     auto const [day, mam] = tt_.day_idx_mam(t);
     q_day_ = day;
     q_mam_ = mam;
-    // abs_q_mam_ = minutes_after_midnight_t{day.v_ * 1440U} + mam;
     abs_q_mam_ = tt_.to_unixtime(day, mam);
-    std::cout << "\n\nTime on first station " << l << " is " << abs_q_mam_
-              << std::endl;
-    std::cout << "Query day " << q_day_ << ", mam " << q_mam_ << std::endl;
-    std::cout << "External interval " << tt_.external_interval() << '\n';
-    std::cout << "EI size " << tt_.external_interval().size() << '\n';
+    if (debug_ea) {
+      std::cout << "\n\nTime on first station " << l << " is " << abs_q_mam_
+                << std::endl;
+      std::cout << "Query day " << q_day_ << ", mam " << q_mam_ << std::endl;
+      std::cout << "External interval " << tt_.external_interval() << '\n';
+      std::cout << "EI size " << tt_.external_interval().size() << '\n';
+    }
 
     // for the first location
     enqueue_start_trips(l, duration_t{0U});
@@ -110,16 +113,20 @@ struct tripbased {
                unixtime_t const worst_time_at_dest,
                pareto_set<routing::journey>& results) {
     auto const abs_max_time = worst_time_at_dest;
-    std::cout << "Abs max time " << abs_max_time << '\n';
     auto abs_min_time = tt_.to_unixtime(q_day_ + day_idx_t{1U}, q_mam_);
-    std::cout << "Abs min time " << abs_min_time << '\n';
+    if (debug_ea) {
+      std::cout << "Abs max time " << abs_max_time << '\n';
+      std::cout << "Abs min time " << abs_min_time << '\n';
+    }
     // Iterate through segments
     for (auto seg_idx = 0U; seg_idx < state_.segments_size(); seg_idx++) {
       auto const curr_segment = get_segment(seg_idx);
       auto const seg_route_idx = tt_.transport_route_[curr_segment.t_idx()];
       auto const seg_stops = tt_.route_location_seq_[seg_route_idx];
-      std::cout << "\tCheck segment: " << curr_segment.t_idx() << " from "
-                << curr_segment.from() << " to " << curr_segment.to() << '\n';
+      if (debug_ea) {
+        std::cout << "\tCheck segment: " << curr_segment.t_idx() << " from "
+                  << curr_segment.from() << " to " << curr_segment.to() << '\n';
+      }
       // Day difference between segment's first stop and first stop of route
       // Needed due to on_query_day property is stored relative to first
       // segment's stop, not relative to the first route's station
@@ -134,13 +141,17 @@ struct tripbased {
       auto const day_on_seg_start = delta_on_seg_start.days();
       auto const mam_on_seg_start = delta_on_seg_start.mam();
       auto const day_diff = day_on_seg_start - day_on_r_start;
-      std::cout << "Day difference " << day_diff << '\n';
+      if (debug_ea) {
+        std::cout << "Day difference " << day_diff << '\n';
+      }
 
       // Absolute time on segment start
       auto const abs_time_on_seg_start =
           tt_.to_unixtime(q_day_ + !curr_segment.on_query_day() - day_diff,
                           minutes_after_midnight_t{mam_on_seg_start});
-      std::cout << "Abs time on seg start " << abs_time_on_seg_start << '\n';
+      if (debug_ea) {
+        std::cout << "Abs time on seg start " << abs_time_on_seg_start << '\n';
+      }
       // Iterate through destination lines
       for (auto dest_line_idx = 0U; dest_line_idx < is_dest_line_.size();
            dest_line_idx++) {
@@ -153,8 +164,10 @@ struct tripbased {
           continue;
         }
 
-        std::cout << "Segment " << seg_idx << ", t_idx " << curr_segment.t_idx()
-                  << " - is dest line\n";
+        if (debug_ea) {
+          std::cout << "Segment " << seg_idx << ", t_idx "
+                    << curr_segment.t_idx() << " - is dest line\n";
+        }
 
         // Iterate through dest_line stops and check every stop's arrival times
         // Case when line can visit multiple targets considered
@@ -205,8 +218,10 @@ struct tripbased {
           }
           // Update min known time at destination
           abs_min_time = abs_time_target;
-          /*std::cout << "Min time on target updated to " << abs_time_target
-                    << '\n';*/
+          if (debug_ea) {
+            std::cout << "Min time on target updated to " << abs_time_target
+                      << '\n';
+          }
           // Add journey
           // Note: if there is a footpath from a station with target_stop_idx to
           // actual target station then it must be considered in reconstruction
@@ -269,12 +284,15 @@ struct tripbased {
           if (transfer.to() == transport_idx_t::invalid()) {
             break;
           }
-          std::cout << "\t Check transfer from stop " << seg_stop_idx
-                    << ", route " << tt_.transport_route_[curr_segment.t_idx()]
-                    << ", transport " << curr_segment.t_idx() << " to "
-                    << tt_.transport_route_[transfer.to()] << ", transport "
-                    << transfer.to() << " to stop " << transfer.stop_idx()
-                    << "\n";
+          if (debug_ea) {
+            std::cout << "\t Check transfer from stop " << seg_stop_idx
+                      << ", route "
+                      << tt_.transport_route_[curr_segment.t_idx()]
+                      << ", transport " << curr_segment.t_idx() << " to "
+                      << tt_.transport_route_[transfer.to()] << ", transport "
+                      << transfer.to() << " to stop " << transfer.stop_idx()
+                      << "\n";
+          }
           // Take n_transfers from current segment to be able to count it
           auto const n_transfers = curr_segment.n_transfers() + 1U;
           if (n_transfers > max_transfers) {
@@ -288,45 +306,24 @@ struct tripbased {
               tt_.event_mam(to_transport_idx, to_stop_idx, event_type::kDep);
           auto const abs_transfer_day_from =
               q_day_ + !curr_segment.on_query_day() + seg_day_diff_on_stop;
-          /*std::cout << "Abs transfer day from " << abs_transfer_day_from
-                    << '\n';*/
+          if (debug_ea) {
+            std::cout << "Abs transfer day from " << abs_transfer_day_from
+                      << '\n';
+          }
           auto const abs_transfer_day =
               (abs_transfer_day_from + transfer.day_change());
-          // std::cout << "Abs transfer day " << abs_transfer_day << '\n';
+          if (debug_ea) {
+            std::cout << "Abs transfer day " << abs_transfer_day << '\n';
+          }
           //  Check transfer active on specific day
           if (tt_.bitfields_[transfer.traffic_days()].test(
                   to_idx(day_idx_t{512U} - abs_transfer_day_from - 1U))) {
-            /*std::cout << "IID = " << tt_.internal_interval_days() << '\n';
-            std::cout << "IID size = " << tt_.internal_interval_days().size()
-                      << '\n';
-            std::cout << "II = " << tt_.internal_interval() << '\n';*/
-            /*std::cout << tt_.bitfields_[transfer.traffic_days()] << "\n";
-            std::cout
-                << "Bifield length: "
-                << tt_.bitfields_[transfer.traffic_days()].to_string().size()
-                << '\n';
-            std::cout << "Bifield on "
-                      << to_idx(day_idx_t{512U} - abs_transfer_day_from - 1U)
-                      << " is "
-                      << tt_.bitfields_[transfer.traffic_days()][to_idx(
-                             day_idx_t{512U} - abs_transfer_day_from - 1U)]
-                      << '\n';
-            auto ss = 0;
-            for (auto s : tt_.bitfields_[transfer.traffic_days()].to_string()) {
-              if (s == '1') {
-                std::cout << "Active on " << ss << '\n';
-              }
-              ss++;
+            if (debug_ea) {
+              std::cout << "Transfer from "
+                        << tt_.transport_route_[curr_segment.t_idx()] << " to "
+                        << tt_.transport_route_[to_transport_idx] << " to stop "
+                        << to_stop_idx << " was not added\n";
             }
-            std::cout << "Transfer day " << abs_transfer_day_from
-                      << ", day change " << transfer.day_change() << "\n";
-            std::cout << "Index "
-                      << to_idx(day_idx_t{512U} - abs_transfer_day_from - 1U)
-                      << " was checked \n";*/
-            /*std::cout << "Transfer from "
-                      << tt_.transport_route_[curr_segment.t_idx()] << " to "
-                      << tt_.transport_route_[to_transport_idx] << " to stop "
-                      << to_stop_idx << " was not added\n";*/
             continue;
           }
           // std::cout << "Transfer added\n";
@@ -334,9 +331,10 @@ struct tripbased {
           auto const abs_time_on_transfer_stop = tt_.to_unixtime(
               (abs_transfer_day - delta_on_transfer_stop.days()),
               delta_on_transfer_stop.as_duration());
-          /*std::cout << "Abs time on transfer stop " <<
-             abs_time_on_transfer_stop
-                    << '\n';*/
+          if (debug_ea) {
+            std::cout << "Abs time on transfer stop "
+                      << abs_time_on_transfer_stop << '\n';
+          }
           if (abs_time_on_transfer_stop > abs_max_time) {
             // std::cout << "Transfer overflows 24 hours rule" << std::endl;
             continue;
@@ -371,10 +369,11 @@ private:
         auto const route_stops = tt_.route_location_seq_[r_idx];
         latest_loc = route_stops.size() - 1U;
       }
-      /*std::cout << "Added trip segment of transport " << t_idx << " from stop
-         "
-                << stop_index << " to " << latest_loc << ", transfers "
-                << n_transfers << ", on query d " << !day_idx << '\n';*/
+      if (debug_ea) {
+        std::cout << "Added trip segment of transport " << t_idx << " from stop"
+                  << stop_index << " to " << latest_loc << ", transfers "
+                  << n_transfers << ", on query d " << !day_idx << '\n';
+      }
       auto new_trip_segment =
           trip_segment(t_idx, stop_index, latest_loc, n_transfers, prev_idx,
                        prev_stop_idx, !day_idx);
@@ -475,8 +474,10 @@ private:
 
         // If trip for this route was found
         if (ed_transport_idx != transport_idx_t::invalid()) {
-          /*std::cout << "Start trip with abs dep time " << abs_ed_time
-                    << ", on next day " << trip_on_the_next_day << '\n';*/
+          if (debug_ea) {
+            std::cout << "Start trip with abs dep time " << abs_ed_time
+                      << ", on next day " << trip_on_the_next_day << '\n';
+          }
           enqueue(r_idx, transport_idx_t{ed_transport_idx}, i, 0U, 0U, 0,
                   trip_on_the_next_day);
         }
