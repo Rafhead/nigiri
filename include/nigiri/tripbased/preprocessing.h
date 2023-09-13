@@ -12,6 +12,7 @@ static constexpr uint16_t bitsetSize = 512U;
 static hash_map<bitfield, bitfield_idx_t> bitfields_;
 
 static constexpr bool debug = false;
+static constexpr bool reduction = true;
 
 nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt);
 
