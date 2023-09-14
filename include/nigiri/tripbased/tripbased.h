@@ -20,6 +20,8 @@ struct timetable;
 
 namespace nigiri::tripbased {
 
+static constexpr uint32_t const max_t_idx = 268435455U;
+
 constexpr bool debug_ea = false;
 
 struct tripbased_stats {
@@ -232,7 +234,9 @@ struct tripbased {
               .dest_ = location_idx_t{seg_stops[target_stop_idx]},
               .transfers_ = curr_segment.n_transfers()});
           if (optimal) {
-            std::cout << "optimal found\n";
+            std::cout << "Found optimal with dep " << start_time << ", arr "
+                      << abs_time_target << ", transfers "
+                      << curr_segment.n_transfers() << '\n';
             auto new_best = best_on_target{
                 .segment_idx_ = seg_idx,
                 .day_ = q_day_ + !curr_segment.on_query_day() - day_diff,
@@ -280,8 +284,8 @@ struct tripbased {
         // Iterate through transfers on this stop
         // Note: transfers are not possible from first stop therefore skip it
         for (auto transfer :
-             tt_.transfers_.at(curr_segment.t_idx().v_ - 1U, seg_stop_idx)) {
-          if (transfer.to() == transport_idx_t::invalid()) {
+             tt_.transfers_.at(curr_segment.t_idx().v_, seg_stop_idx)) {
+          if (transfer.to() == max_t_idx) {
             break;
           }
           if (debug_ea) {
@@ -530,7 +534,6 @@ private:
               auto const route_stop = stop{route_loc};
               if (route_stop.location_idx() == from_loc_idx) {
                 stop_idx = route_loc;
-                std::cout << "Added to is dest line with footpath\n";
                 is_dest_line_[route_from_loc.v_].emplace_back(
                     std::make_pair(stop_idx, location_idx_t{i}));
               }

@@ -110,10 +110,9 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
         }
 
         // Skip if in is not allowed
-        /*auto const stop_to = stop{loc_to_idx.v_};
-        std::cout << "In to stop " << stop_to.location_ << " is "
-                  << stop_to.in_allowed() << std::endl;
-        if (!stop_to.in_allowed()) {
+        /*auto const stop_to_in = stop{loc_to_idx.v_};
+        if (!stop_to_in.in_allowed()) {
+          std::cout << 'S' << '\n';
           continue;
         }*/
 
@@ -430,14 +429,22 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
         }
         footpath_from_idx++;
       }
+
+      // Add dummy transfer for the stop if there aren't any transfers for
+      // correct indexing
       if (transfers_from.empty()) {
-        auto const new_transfer = transfer(transport_idx_t::invalid());
+        auto const new_transfer = transfer(max_transport_idx);
         transfers_from.emplace_back(new_transfer);
-        continue;
-      } else {
-        trip_transfers.emplace_back(transfers_from);
       }
+      trip_transfers.emplace_back(transfers_from);
     }
+
+    // Add dummy transfer for the first station for correct indexing
+    auto const first_stop_transfer = transfer(max_transport_idx);
+    transfers_from.clear();
+    transfers_from.emplace_back(first_stop_transfer);
+    trip_transfers.emplace_back(transfers_from);
+
     // Reverse transfers because we iterated in opposite direction of stops
     std::reverse(trip_transfers.begin(), trip_transfers.end());
     transfers.emplace_back(trip_transfers);

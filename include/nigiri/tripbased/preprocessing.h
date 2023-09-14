@@ -8,7 +8,9 @@
 #include "utl/get_or_create.h"
 
 namespace nigiri::tripbased {
-static constexpr uint16_t bitsetSize = 512U;
+static constexpr uint16_t const bitsetSize = 512U;
+static constexpr uint32_t const max_transport_idx = 268435455U;
+
 static hash_map<bitfield, bitfield_idx_t> bitfields_;
 
 static constexpr bool debug = false;
