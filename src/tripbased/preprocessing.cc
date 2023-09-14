@@ -71,13 +71,11 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
       transfers_from.resize(0U);
 
       // Skip if it is not possible to transfer from this stop
-      auto const stop_from = stop{stop_from_idx};
-      /*std::cout << "Out from stop " << stop_from.location_ << " is "
-                << stop_from.out_allowed();
+      auto const stop_from = stop{loc_from_seq[stop_from_idx]};
       if (!stop_from.out_allowed()) {
         trip_transfers.emplace_back(transfers_from);
         continue;
-      }*/
+      }
       auto const loc_from_idx = stop_from.location_idx();
       // auto const loc_from_idx = loc_from_seq[stop_from_idx];
       auto const [transport_from_days, transport_from_mam] =
