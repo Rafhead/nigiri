@@ -315,8 +315,9 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
 
               // for each stop p_k^u ...
               // Check for improvements
-              auto const loc_first_arrivals = tt.event_times_at_stop(
-                  route_to_idx, stop_to_idx, event_type::kArr);
+              auto loc_first_arrivals = tt.event_times_at_stop(
+                  route_to_idx, stop_to_idx,
+                  stop_to_idx == 0U ? event_type::kDep : event_type::kArr);
               auto const loc_first_arr =
                   loc_first_arrivals[transport_to_offset];
               // Indicating day change on next stops
