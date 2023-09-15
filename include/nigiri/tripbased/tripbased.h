@@ -20,7 +20,7 @@ struct timetable;
 
 namespace nigiri::tripbased {
 
-static constexpr uint32_t const max_t_idx = 268435455U;
+static constexpr uint32_t const max_t_idx = transfer::max_transport_idx - 1;
 
 constexpr bool debug_ea = false;
 

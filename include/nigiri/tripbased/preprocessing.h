@@ -9,7 +9,8 @@
 
 namespace nigiri::tripbased {
 static constexpr uint16_t const bitsetSize = 512U;
-static constexpr uint32_t const max_transport_idx = 268435455U;
+static constexpr uint32_t const max_transport_idx =
+    transfer::max_transport_idx - 1;
 
 static hash_map<bitfield, bitfield_idx_t> bitfields_;
 
