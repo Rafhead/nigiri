@@ -168,14 +168,22 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
           auto const loc_to_ev_times = tt.event_times_at_stop(
               route_to_idx, stop_to_idx, event_type::kDep);
           // Set iterator on that to iterate through times
-          auto const ev_time_range = it_range{
+          /*auto const ev_time_range = it_range{
               linear_lb(loc_to_ev_times.begin(), loc_to_ev_times.end(),
                         minutes_after_midnight_t{mam_at_stop_from},
                         [&](delta const a, minutes_after_midnight_t b) {
                           return minutes_after_midnight_t{a.mam()} < b;
                         }),
-              loc_to_ev_times.end()};
-          auto ea_time_it = begin(ev_time_range);
+              loc_to_ev_times.end()};*/
+          // auto ea_time_it = begin(ev_time_range);
+          auto ea_time_it = loc_to_ev_times.end();
+          for (auto it = loc_to_ev_times.begin(); it < loc_to_ev_times.end();
+               it++) {
+            if (it->mam() >= mam_at_stop_from % 1440) {
+              ea_time_it = it;
+              break;
+            }
+          }
 
           /*for (auto ev : loc_to_ev_times) {
             std::cout << ev.mam() << ", ";
@@ -183,13 +191,14 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
           std::cout << "\n\n";*/
 
           // Check if footpath makes day change
-          if (mam_at_stop_from / 1440U != transport_from_mam / 1440U) {
+          if (mam_at_stop_from / 1440 != transport_from_mam / 1440) {
             day_change = true;
           }
           // Check if ea transport found
-          if ((ev_time_range.empty() || ea_time_it == end(loc_to_ev_times)) &&
-              !day_change) {
-            ea_time_it = begin(loc_to_ev_times);
+          // if ((ev_time_range.empty() || ea_time_it == end(loc_to_ev_times))
+          // &&
+          if (ea_time_it == loc_to_ev_times.end() && !day_change) {
+            ea_time_it = loc_to_ev_times.begin();
             day_change = true;
           }
           // get copy of earliest time to iterate later on it and keep
@@ -203,7 +212,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
           while (transport_from_bf_cpy.any()) {
             // transport to offset
             auto transport_to_offset =
-                static_cast<std::size_t>(&*ea_time - loc_to_ev_times.data());
+                static_cast<std::size_t>(ea_time - loc_to_ev_times.begin());
             // transport to itself
             auto const transport_to_idx =
                 tt.route_transport_ranges_[route_to_idx][transport_to_offset];
@@ -414,14 +423,16 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               break;
             }
 
-            if (ea_time == end(ev_time_range) && !day_change) {
+            // if (ea_time == end(ev_time_range) && !day_change) {
+            if (ea_time == loc_to_ev_times.end() && !day_change) {
               day_change = true;
               ea_time = loc_to_ev_times.begin();
               continue;
             }
 
             // Case when already day change occurred and iterated all times
-            if (ea_time == end(ev_time_range) && day_change) {
+            // if (ea_time == end(ev_time_range) && day_change) {
+            if (day_change && ea_time == loc_to_ev_times.end()) {
               break;
             }
           }
