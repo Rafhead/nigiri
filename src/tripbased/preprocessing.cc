@@ -6,6 +6,8 @@ namespace nigiri::tripbased {
 
 nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
 
+  auto s = std::chrono::high_resolution_clock::now();
+
   std::uint32_t transfer_size = 0U;
 
   // Transfers
@@ -259,141 +261,133 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               break;
             }
             auto keep = bitset<bitsetSize>();
-            keep = transfer_bf;
+            // keep = transfer_bf;
 
-            if (reduction) {
-              // Check for U-turn
-              // Check if u turn possible
-              /*auto u_turn_valid = true;
-              auto loc_from_prev_idx = location_idx_t{0U};
-              if (stop_from_idx < 1U) {
-                u_turn_valid = false;
-              }
-              auto loc_to_next_idx = location_idx_t{0U};
-              if (loc_to_pos_idx > route_to_stop_seq.size() - 2U) {
-                u_turn_valid = false;
-              }
-              if (u_turn_valid) {
-                loc_from_prev_idx =
-                    location_idx_t{loc_from_seq[stop_from_idx - 1U]};
-                loc_to_next_idx = location_idx_t{loc_to_pos_idx + 1U};
-              }
-              if (u_turn_valid && loc_from_prev_idx == loc_to_next_idx &&
-                  stop_from_idx != 1U &&
-                  loc_to_pos_idx != route_to_stop_seq.size() - 2U) {
-                std::cout << "U turn started\n";
-                auto const [transport_from_prev_days, transport_from_prev_mam] =
-                    tt.event_mam(route_idx_t{route_from_idx},
-                                 transport_from_idx, stop_from_idx - 1,
-                                 event_type::kArr);
-                auto const day_diff =
-                    transport_from_days - transport_from_prev_days;
-                auto const transport_from_bf_cc_m_idx = get_bitfield_idx(
-                    transport_from_bf >> transport_from_prev_days, tt);
-                auto next_c = false;
-                auto const change_time =
-                    tt.locations_.transfer_time_[location_idx_t{loc_from_idx}];
-                if (transport_from_prev_mam + change_time.count() !=
-                    transport_from_prev_mam) {
-                  next_c = true;
-                }
-                // auto const route_to_n_transports = static_cast<unsigned>(
-                //     tt.route_transport_ranges_[route_to_idx].size());
-                auto const [loc_to_next_days, loc_to_next_mam] =
-                    tt.event_mam(route_to_idx, transport_to_idx,
-                                 stop_to_idx + 1, event_type::kDep);
-                //(ea_time - 2 * route_to_n_transports)->count();
-                if (transport_from_prev_mam + change_time.count() % 1440U >
-                    loc_to_next_mam % 1440U) {
-                  next_c = true;
-                }
-                //[b_u]'' <-- ...
-                auto transport_to_bf_cc = transport_to_bf;
-                transport_to_bf_cc >>= loc_to_next_days;
-                transport_to_bf_cc <<= next_c;
-                //[b_tr]'
-                auto transfer_bf_cpy =
-                    tt.bitfields_[transport_from_bf_cc_m_idx];
-                transfer_bf_cpy &= transport_to_bf_cc;
-                //[b_tr] <--
-                transfer_bf_cpy >>= day_diff;
-                transfer_bf_cpy = ~transfer_bf_cpy;
-                transfer_bf &= transfer_bf_cpy;
-                std::cout << "U turn ended\n";
-              }*/  // End check U-turn
-
-              // for each stop p_k^u ...
-              // Check for improvements
-              auto loc_first_arrivals = tt.event_times_at_stop(
-                  route_to_idx, stop_to_idx,
-                  stop_to_idx == 0U ? event_type::kDep : event_type::kArr);
-              auto const loc_first_arr =
-                  loc_first_arrivals[transport_to_offset];
-              // Indicating day change on next stops
-              auto day_change_on_next_stop = day_change;
-              for (auto next_loc = loc_to_pos_idx + 1U;
-                   next_loc < route_to_stop_seq.size(); next_loc++) {
-                auto const next_stop = stop{route_to_stop_seq[next_loc]};
-                auto const loc_after_arrivals = tt.event_times_at_stop(
-                    route_to_idx, next_loc, event_type::kArr);
-                // Arrival on stop p_k^u
-                auto const loc_after_arr =
-                    loc_after_arrivals[transport_to_offset];
-                // 24 hours check
-                if (footpath_duration.count() % 1440 +
-                        loc_after_arr.as_duration().count() -
-                        loc_first_arr.as_duration().count() >
-                    1440) {
-                  break;
-                }
-                // check if day change in the next station
-                if (!day_change_on_next_stop &&
-                    loc_after_arr.count() % 1440 <= mam_at_stop_from) {
-                  day_change_on_next_stop = 1;
-                }
-                keep &= tt.bitfields_[update_time(
-                            arrival_times, next_stop.location_idx(),
-                            minutes_after_midnight_t{loc_after_arr.mam()},
-                            transfer_bf, day_change_on_next_stop, tt)]
-                        << day_change_on_next_stop;
-
-                // Iter through footpaths
-                auto const next_locs_foot =
-                    tt.locations_.footpaths_out_[next_stop.location_idx()];
-                // Whether after transfer to u and traversing next station a
-                // footpath can make day change
-                bool day_change_footpath;
-                for (auto const [tgt, f_dur] : next_locs_foot) {
-                  day_change_footpath = day_change_on_next_stop;
-                  // Arr to stop reachable by footpath
-                  auto const arr_to_delta =
-                      loc_after_arr.as_duration() + duration_t{f_dur};
-                  // 24 hours check
-                  if (footpath_duration.count() % 1440U + arr_to_delta.count() -
-                          loc_first_arr.as_duration().count() >
-                      1440U) {
-                    continue;
-                  }
-                  // check if footpath makes day change
-                  if (!day_change_on_next_stop &&
-                      arr_to_delta.count() % 1440 <= mam_at_stop_from) {
-                    day_change_footpath = 1;
-                  }
-
-                  auto const arr_to_f_mam =
-                      minutes_after_midnight_t{arr_to_delta.count() % 1440U};
-                  keep &= tt.bitfields_[update_time(
-                              arrival_times, location_idx_t{tgt}, arr_to_f_mam,
-                              transfer_bf, day_change_footpath, tt)]
-                          << day_change_footpath;
-                  keep &=
-                      tt.bitfields_[update_time(
-                          ea_change_times, location_idx_t{tgt}, arr_to_f_mam,
-                          transfer_bf, day_change_footpath, tt)]
-                      << day_change_footpath;
-                }
-              }  // End check improvements
+            // Check for U-turn
+            // Check if u turn possible
+            auto u_turn_valid = true;
+            auto loc_from_prev_idx = location_idx_t{0U};
+            if (stop_from_idx < 1U) {
+              u_turn_valid = false;
             }
+            auto loc_to_next_idx = location_idx_t{0U};
+            if (loc_to_pos_idx > route_to_stop_seq.size() - 2U) {
+              u_turn_valid = false;
+            }
+            if (u_turn_valid) {
+              loc_from_prev_idx =
+                  location_idx_t{loc_from_seq[stop_from_idx - 1U]};
+              loc_to_next_idx = location_idx_t{loc_to_pos_idx + 1U};
+            }
+            if (u_turn_valid && loc_from_prev_idx == loc_to_next_idx &&
+                stop_from_idx != 1U &&
+                loc_to_pos_idx != route_to_stop_seq.size() - 2U) {
+              auto const [transport_from_prev_days, transport_from_prev_mam] =
+                  tt.event_mam(route_idx_t{route_from_idx}, transport_from_idx,
+                               stop_from_idx - 1, event_type::kArr);
+              auto const day_diff =
+                  transport_from_days - transport_from_prev_days;
+              auto const transport_from_bf_cc_m_idx = get_bitfield_idx(
+                  transport_from_bf >> transport_from_prev_days, tt);
+              auto next_c = false;
+              auto const change_time =
+                  tt.locations_.transfer_time_[location_idx_t{loc_from_idx}];
+              if (transport_from_prev_mam + change_time.count() !=
+                  transport_from_prev_mam) {
+                next_c = true;
+              }
+              // auto const route_to_n_transports = static_cast<unsigned>(
+              //     tt.route_transport_ranges_[route_to_idx].size());
+              auto const [loc_to_next_days, loc_to_next_mam] =
+                  tt.event_mam(route_to_idx, transport_to_idx, stop_to_idx + 1,
+                               event_type::kDep);
+              //(ea_time - 2 * route_to_n_transports)->count();
+              if (transport_from_prev_mam + change_time.count() % 1440U >
+                  loc_to_next_mam % 1440U) {
+                next_c = true;
+              }
+              //[b_u]'' <-- ...
+              auto transport_to_bf_cc = transport_to_bf;
+              transport_to_bf_cc >>= loc_to_next_days;
+              transport_to_bf_cc <<= next_c;
+              //[b_tr]'
+              auto transfer_bf_cpy = tt.bitfields_[transport_from_bf_cc_m_idx];
+              transfer_bf_cpy &= transport_to_bf_cc;
+              //[b_tr] <--
+              transfer_bf_cpy >>= day_diff;
+              transfer_bf_cpy = ~transfer_bf_cpy;
+              transfer_bf &= transfer_bf_cpy;
+            }  // End check U-turn
+
+            // for each stop p_k^u ...
+            // Check for improvements
+            auto loc_first_arrivals = tt.event_times_at_stop(
+                route_to_idx, stop_to_idx,
+                stop_to_idx == 0U ? event_type::kDep : event_type::kArr);
+            auto const loc_first_arr = loc_first_arrivals[transport_to_offset];
+            // Indicating day change on next stops
+            auto day_change_on_next_stop = day_change;
+            for (auto next_loc = loc_to_pos_idx + 1U;
+                 next_loc < route_to_stop_seq.size(); next_loc++) {
+              auto const next_stop = stop{route_to_stop_seq[next_loc]};
+              auto const loc_after_arrivals = tt.event_times_at_stop(
+                  route_to_idx, next_loc, event_type::kArr);
+              // Arrival on stop p_k^u
+              auto const loc_after_arr =
+                  loc_after_arrivals[transport_to_offset];
+              // 24 hours check
+              if (footpath_duration.count() % 1440 +
+                      loc_after_arr.as_duration().count() -
+                      loc_first_arr.as_duration().count() >
+                  1440) {
+                break;
+              }
+              // check if day change in the next station
+              if (!day_change_on_next_stop &&
+                  loc_after_arr.count() % 1440 <= mam_at_stop_from) {
+                day_change_on_next_stop = 1;
+              }
+              keep |= (tt.bitfields_[update_time(
+                           arrival_times, next_stop.location_idx(),
+                           minutes_after_midnight_t{loc_after_arr.mam()},
+                           transfer_bf, day_change_on_next_stop, tt)]
+                       << day_change_on_next_stop);
+
+              // Iter through footpaths
+              auto const next_locs_foot =
+                  tt.locations_.footpaths_out_[next_stop.location_idx()];
+              // Whether after transfer to u and traversing next station a
+              // footpath can make day change
+              bool day_change_footpath;
+              for (auto const [tgt, f_dur] : next_locs_foot) {
+                day_change_footpath = day_change_on_next_stop;
+                // Arr to stop reachable by footpath
+                auto const arr_to_delta =
+                    loc_after_arr.as_duration() + duration_t{f_dur};
+                // 24 hours check
+                if (footpath_duration.count() % 1440U + arr_to_delta.count() -
+                        loc_first_arr.as_duration().count() >
+                    1440U) {
+                  continue;
+                }
+                // check if footpath makes day change
+                if (!day_change_on_next_stop &&
+                    arr_to_delta.count() % 1440 <= mam_at_stop_from) {
+                  day_change_footpath = 1;
+                }
+
+                auto const arr_to_f_mam =
+                    minutes_after_midnight_t{arr_to_delta.count() % 1440U};
+                keep |= (tt.bitfields_[update_time(
+                             arrival_times, location_idx_t{tgt}, arr_to_f_mam,
+                             transfer_bf, day_change_footpath, tt)]
+                         << day_change_footpath);
+                keep |= (tt.bitfields_[update_time(
+                             ea_change_times, location_idx_t{tgt}, arr_to_f_mam,
+                             transfer_bf, day_change_footpath, tt)]
+                         << day_change_footpath);
+              }
+            }  // End check improvements
 
             if (keep.any()) {
               transport_from_bf_cpy &= ~keep;
@@ -458,9 +452,17 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
     // Reverse transfers because we iterated in opposite direction of stops
     std::reverse(trip_transfers.begin(), trip_transfers.end());
     transfers.emplace_back(trip_transfers);
-    std::cout << "Transfers: " << transfer_size << '\n';
   }
-  std::cout << "Transfers amount " << transfer_size << " transfers\n";
+  auto f = std::chrono::high_resolution_clock::now();
+  auto delta = std::chrono::duration_cast<std::chrono::seconds>(f - s);
+  std::cout << "\n";
+  std::cout << delta.count() << " seconds\n";
+  std::cout << "\n";
+  std::cout << transfer_size << " transfers\n";
+  std::cout << "\n";
+  std::cout << "External interval " << tt.external_interval() << '\n';
+  std::cout << "EI size " << tt.external_interval().size() << '\n';
+  std::cout << "\n";
   return transfers;
 }
 
