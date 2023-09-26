@@ -75,6 +75,8 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
       // Skip if it is not possible to transfer from this stop
       auto const stop_from = stop{loc_from_seq[stop_from_idx]};
       if (!stop_from.out_allowed()) {
+        auto const new_transfer = transfer(max_transport_idx);
+        transfers_from.emplace_back(new_transfer);
         trip_transfers.emplace_back(transfers_from);
         continue;
       }
@@ -84,37 +86,28 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
           tt.event_mam(route_idx_t{route_from_idx}, transport_from_idx,
                        stop_from_idx, event_type::kArr);
       transport_from_bf_idx = tt.transport_traffic_days_[transport_from_idx];
-      update_time(arrival_times, location_idx_t{loc_from_idx},
+      update_time(arrival_times, loc_from_idx,
                   minutes_after_midnight_t{transport_from_mam},
                   tt.bitfields_[transport_from_bf_idx], false, tt);
 
       // Iterate through all stops that are reachable by footpath
-      // +1 for the station itself
+      // +1 for the station itself.
       // Station itself is not included in footpaths from them
-      // TODO: Possibly check meta stations too
       auto const loc_footpaths_from =
-          tt.locations_.footpaths_out_[location_idx_t{loc_from_idx}];
+          tt.locations_.footpaths_out_[loc_from_idx];
       auto footpath_from_idx = 0U;
       // Iterate through all footpaths from
       while (footpath_from_idx != loc_footpaths_from.size() + 1) {
         // Pick up the station the footpath goes to
         if (footpath_from_idx == loc_footpaths_from.size() ||
             loc_footpaths_from.empty()) {
-          loc_to_idx = location_idx_t{loc_from_idx};
+          loc_to_idx = loc_from_idx;
           footpath_duration = tt.locations_.transfer_time_[loc_to_idx];
         } else {
-          loc_to_idx =
-              location_idx_t{loc_footpaths_from.at(footpath_from_idx).target_};
+          loc_to_idx = loc_footpaths_from.at(footpath_from_idx).target();
           footpath_duration =
-              duration_t{loc_footpaths_from.at(footpath_from_idx).duration_};
+              loc_footpaths_from.at(footpath_from_idx).duration();
         }
-
-        // Skip if in is not allowed
-        /*auto const stop_to_in = stop{loc_to_idx.v_};
-        if (!stop_to_in.in_allowed()) {
-          std::cout << 'S' << '\n';
-          continue;
-        }*/
 
         day_change = false;
         // Get mam for the trip from and add footpath
@@ -138,7 +131,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
           if (route_from_idx == route_to_idx) {
             continue;
           }
-          // Skip route if it is his last station
+          // Skip route if it is its last station
           auto const last_r_stop =
               stop{tt.route_location_seq_
                        [route_to_idx]
@@ -147,8 +140,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
             continue;
           }
           // Get position of stop to in route sequence
-          auto const route_to_stop_seq =
-              tt.route_location_seq_[route_idx_t{route_to_idx}];
+          auto const route_to_stop_seq = tt.route_location_seq_[route_to_idx];
           stop_idx_t loc_to_pos_idx = 0U;
           for (auto idx = 0U; idx < route_to_stop_seq.size(); idx++) {
             auto const stop_to = stop{route_to_stop_seq[idx]};
@@ -156,6 +148,12 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               loc_to_pos_idx = idx;
             }
           }
+          // Skip this station if in is not allowed
+          auto const stop_to = stop{route_to_stop_seq[loc_to_pos_idx]};
+          if (!stop_to.in_allowed()) {
+            break;
+          }
+
           // Set the current trips bitfields to its actual value and shift
           // b[t]' <-- ...
           transport_from_bf.set(
@@ -261,11 +259,11 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
               break;
             }
             auto keep = bitset<bitsetSize>();
-            // keep = transfer_bf;
+            keep = transfer_bf;
 
             // Check for U-turn
             // Check if u turn possible
-            auto u_turn_valid = true;
+            /*auto u_turn_valid = true;
             auto loc_from_prev_idx = location_idx_t{0U};
             if (stop_from_idx < 1U) {
               u_turn_valid = false;
@@ -387,7 +385,7 @@ nvec<std::uint32_t, transfer, 2> compute_transfers(timetable& tt) {
                              transfer_bf, day_change_footpath, tt)]
                          << day_change_footpath);
               }
-            }  // End check improvements
+            }*/  // End check improvements
 
             if (keep.any()) {
               transport_from_bf_cpy &= ~keep;
