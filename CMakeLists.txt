@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
 project(nigiri)
 
-if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
-  if(NIGIRI_MIMALLOC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
-  else()
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-  endif()
-endif()
+if (NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+    if (NIGIRI_MIMALLOC)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+    else ()
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif ()
+endif ()
 
 include(cmake/buildcache.cmake)
 include(cmake/pkg.cmake)
@@ -15,17 +15,21 @@ include(cmake/pkg.cmake)
 
 # --- GTFS-RT PROTOBUF ---
 add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/gtfsrt/gtfs-realtime.pb.h
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/gtfsrt/gtfs-realtime.pb.cc
-    COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:protoc>
-    --cpp_out=${CMAKE_CURRENT_BINARY_DIR}/generated/gtfsrt
-    --proto_path=${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/gtfs-realtime.proto
-    DEPENDS protoc
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/gtfs-realtime.proto
-    COMMENT "Generating GTFS RT protocol buffers C++ code"
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/gtfsrt/gtfs-realtime.pb.h
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/gtfsrt/gtfs-realtime.pb.cc
+        COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:protoc>
+        --cpp_out=${CMAKE_CURRENT_BINARY_DIR}/generated/gtfsrt
+        --proto_path=${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/gtfs-realtime.proto
+        DEPENDS protoc
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/gtfs-realtime.proto
+        COMMENT "Generating GTFS RT protocol buffers C++ code"
 )
-add_library(gtfsrt ${CMAKE_CURRENT_BINARY_DIR}/generated/gtfsrt/gtfs-realtime.pb.cc)
+add_library(gtfsrt ${CMAKE_CURRENT_BINARY_DIR}/generated/gtfsrt/gtfs-realtime.pb.cc
+        include/nigiri/tripbased/reconstruct.h
+        include/nigiri/tripbased/tripbased_state.h
+        include/nigiri/tripbased/best_on_target.h
+        )
 target_compile_features(gtfsrt PUBLIC cxx_std_23)
 target_include_directories(gtfsrt SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_link_libraries(gtfsrt protobuf)
@@ -39,46 +43,48 @@ if (NIGIRI_LINT)
 endif ()
 
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-  set(nigiri-compile-options
-        -Weverything
-        -Wno-c++98-compat
-        -Wno-c++98-compat-pedantic
-        -Wno-newline-eof
-        -Wno-missing-prototypes
-        -Wno-padded
-        -Wno-double-promotion
-        -Wno-undef
-        -Wno-undefined-reinterpret-cast
-        -Wno-float-conversion
-        -Wno-global-constructors
-        -Wno-exit-time-destructors
-        -Wno-switch-enum
-        -Wno-c99-designator
-        -Wno-zero-as-null-pointer-constant
-        -Wno-missing-noreturn
-        -Wno-undefined-func-template
-        -Wno-unsafe-buffer-usage
-        -Wno-c++20-compat
-        -Werror)
-elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
-  set(nigiri-compile-options -Wall -Wextra -Werror)
-elseif(MSVC)
-  set(nigiri-compile-options /WX)
-else()
-  set(nigiri-compile-options
-        -Wall
-        -Wextra
-        -Wno-maybe-uninitialized)
-  if (NOT CMAKE_CROSSCOMPILING)
-    set(nigiri-compile-options ${nigiri-compile-options} -Werror)
-  endif()
-endif()
+    set(nigiri-compile-options
+            -Weverything
+            -Wno-c++98-compat
+            -Wno-c++98-compat-pedantic
+            -Wno-newline-eof
+            -Wno-missing-prototypes
+            -Wno-padded
+            -Wno-double-promotion
+            -Wno-undef
+            -Wno-undefined-reinterpret-cast
+            -Wno-float-conversion
+            -Wno-global-constructors
+            -Wno-exit-time-destructors
+            -Wno-switch-enum
+            -Wno-c99-designator
+            -Wno-zero-as-null-pointer-constant
+            -Wno-missing-noreturn
+            -Wno-undefined-func-template
+            -Wno-unsafe-buffer-usage
+            -Wno-c++20-compat
+            -Werror)
+elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
+    set(nigiri-compile-options -Wall -Wextra -Werror)
+elseif (MSVC)
+    set(nigiri-compile-options /WX)
+else ()
+    set(nigiri-compile-options
+            -Wall
+            -Wextra
+            -Wno-maybe-uninitialized)
+    if (NOT CMAKE_CROSSCOMPILING)
+        set(nigiri-compile-options ${nigiri-compile-options} -Werror)
+    endif ()
+endif ()
 
 
 # --- LIB ---
 file(GLOB_RECURSE nigiri-files src/*.cc)
 add_library(nigiri ${nigiri-files} include/nigiri/tripbased/fws_multimap.h include/nigiri/tripbased/vector.h include/nigiri/tripbased/data.h include/nigiri/tripbased/preprocessing.h src/tripbased/preprocessing.cc
-        include/nigiri/tripbased/trip_segment.h)
+        include/nigiri/tripbased/trip_segment.h
+        src/tripbased/reconsctruct.cc
+        )
 target_include_directories(nigiri PUBLIC include)
 target_link_libraries(nigiri PUBLIC cista geo utl fmt date miniz date-tz wyhash unordered_dense gtfsrt)
 target_compile_features(nigiri PUBLIC cxx_std_23)

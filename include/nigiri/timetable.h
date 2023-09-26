@@ -20,6 +20,8 @@
 #include "nigiri/stop.h"
 #include "nigiri/types.h"
 
+#include "nigiri/tripbased/transfer.h"
+
 namespace nigiri {
 
 struct timetable {
@@ -442,6 +444,9 @@ struct timetable {
   // Lower bound graph.
   vecvec<location_idx_t, footpath> fwd_search_lb_graph_;
   vecvec<location_idx_t, footpath> bwd_search_lb_graph_;
+
+  // Trip-based transfers
+  nvec<std::uint32_t, tripbased::transfer, 2> transfers_;
 };
 
 }  // namespace nigiri

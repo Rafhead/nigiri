@@ -5,6 +5,16 @@
 namespace nigiri::tripbased {
 
 struct transfer {
+  transfer() = default;
+
+  static constexpr auto max_transport_idx =
+      std::numeric_limits<std::uint32_t>::max() >> 4;
+
+  transfer(uint32_t const to) : to_transport_idx_{to} {
+    assert(cista::to_idx(to) <
+           (std::numeric_limits<std::uint32_t>::max() >> 4));
+  }
+
   transfer(transport_idx_t const to,
            unsigned const stop_idx,
            bitfield_idx_t const traffic_days_idx,
@@ -32,5 +42,17 @@ private:
   std::uint64_t traffic_days_idx_ : 24;  // 16M
   std::uint64_t day_change_ : 1;
 };
+
+template <std::size_t NMaxTypes>
+constexpr auto static_type_hash(transfer const*,
+                                cista::hash_data<NMaxTypes> h) noexcept {
+  return h.combine(cista::hash("nigiri::tripbased::transfer"));
+}
+
+template <typename Ctx>
+inline void serialize(Ctx&, transfer const*, cista::offset_t const) {}
+
+template <typename Ctx>
+inline void deserialize(Ctx const&, transfer*) {}
 
 }  // namespace nigiri::tripbased
