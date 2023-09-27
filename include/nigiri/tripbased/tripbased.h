@@ -175,15 +175,46 @@ struct tripbased {
             auto const abs_time_target =
                 abs_time_on_seg_start + (delta_on_target.as_duration() -
                                          delta_on_seg_start.as_duration());
-            update_best(start_time, abs_time_target, curr_stop.location_idx(),
-                        s_idx, curr_segment.n_transfers(), seg_idx,
+            update_best(start_time, abs_time_target, curr_l_idx, s_idx,
+                        curr_segment.n_transfers(), seg_idx,
                         q_day_ + !curr_segment.on_query_day() - day_diff,
                         results);
           }
 
           // Check meta stations
+          for (auto meta_l_idx : tt_.locations_.equivalences_[curr_l_idx]) {
+            if (is_dest_orig_[to_idx(meta_l_idx)]) {
+              auto const delta_on_target =
+                  tt_.event_mam(curr_segment.t_idx(), s_idx, event_type::kArr);
+              // Calculating absolute arrival time
+              auto const abs_time_target =
+                  abs_time_on_seg_start + (delta_on_target.as_duration() -
+                                           delta_on_seg_start.as_duration());
+              update_best(start_time, abs_time_target, meta_l_idx, s_idx,
+                          curr_segment.n_transfers(), seg_idx,
+                          q_day_ + !curr_segment.on_query_day() - day_diff,
+                          results);
+            }
+          }
 
           // Check stops reachable by footpath
+          for (auto f : tt_.locations_.footpaths_out_[curr_l_idx]) {
+            auto const f_tgt = f.target();
+            auto const f_duration = f.duration();
+            if (is_dest_orig_[to_idx(f_tgt)]) {
+              auto const delta_on_target =
+                  tt_.event_mam(curr_segment.t_idx(), s_idx, event_type::kArr);
+              // Calculating absolute arrival time
+              auto const abs_time_target = abs_time_on_seg_start +
+                                           (delta_on_target.as_duration() -
+                                            delta_on_seg_start.as_duration()) +
+                                           f_duration;
+              update_best(start_time, abs_time_target, f_tgt, s_idx,
+                          curr_segment.n_transfers(), seg_idx,
+                          q_day_ + !curr_segment.on_query_day() - day_diff,
+                          results);
+            }
+          }
         }
       }
       // Iterate through destination lines
