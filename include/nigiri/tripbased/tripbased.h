@@ -91,7 +91,8 @@ struct tripbased {
     q_mam_ = mam;
     abs_q_mam_ = tt_.to_unixtime(day, mam);
     if (debug_ea) {
-      std::cout << "\n\nTime on first station " << l << " is " << abs_q_mam_
+      std::cout << "\n\nTime on first station " << l << ", name "
+                << tt_.locations_.names_[l].view() << " is " << abs_q_mam_
                 << std::endl;
       std::cout << "Query day " << q_day_ << ", mam " << q_mam_ << std::endl;
       std::cout << "External interval " << tt_.external_interval() << '\n';
@@ -437,9 +438,10 @@ private:
         latest_loc = route_stops.size() - 1U;
       }
       if (debug_ea) {
-        std::cout << "Added trip segment of transport " << t_idx << " from stop"
-                  << stop_index << " to " << latest_loc << ", transfers "
-                  << n_transfers << ", on query d " << !day_idx << '\n';
+        std::cout << "Added trip segment of transport " << t_idx
+                  << " from stop " << stop_index << " to " << latest_loc
+                  << ", transfers " << n_transfers << ", on query d "
+                  << !day_idx << '\n';
       }
       auto new_trip_segment =
           trip_segment(t_idx, stop_index, latest_loc, n_transfers, prev_idx,
@@ -481,10 +483,14 @@ private:
       mam_to_target = duration_t{mam_to_target.count() - 1440U};
     }
     // Iterate through routes visiting station
-    for (auto const r_idx : tt_.location_routes_[location_idx_t{l}]) {
+    for (auto const r_idx : tt_.location_routes_[l]) {
       // Iterate through stops of route
-      auto const loc_seq = tt_.route_location_seq_.at(r_idx);
-      for (auto const [i, s] : utl::enumerate(loc_seq)) {
+      auto const locs = tt_.route_location_seq_[r_idx];
+      if (debug_ea) {
+        std::cout << "Analyzing route " << r_idx << ", stops size "
+                  << locs.size() << '\n';
+      }
+      for (auto const [i, s] : utl::enumerate(locs)) {
         auto const r_stop = stop{s};
 
         // Skip if this is another stop
@@ -495,20 +501,21 @@ private:
 
         // Check if this stop is not the last in the sequence, and it is
         // possible to get on board to it
-        if ((i == loc_seq.size() - 1) || !r_stop.in_allowed()) {
+        if ((i == locs.size() - 1) || !r_stop.in_allowed()) {
           continue;
         }
 
-        // Found a station that is the start station or start reachable with
-        // footpath.
+        if (debug_ea) {
+          std::cout << "\tStart on idx " << i << '\n';
+        }
+
+        // Found a station that is the start station.
         // Iterate through trip of this route and find earliest
         auto const& transport_range = tt_.route_transport_ranges_[r_idx];
         auto ed_transport_idx = transport_idx_t::invalid();
         // Absolute max time as query time + 24 hours
         // Will not allow trips that start later than 24 hours after query start
-        auto abs_ed_time = tt_.to_unixtime(q_day_ + day_idx_t{1U}, q_mam_);
-        /*std::cout << "Absolute ed time " << abs_ed_time << "\n";
-        std::cout << "Absolute q mam " << abs_q_mam_ << '\n';*/
+        auto abs_max_ed_time = tt_.to_unixtime(q_day_ + day_idx_t{1U}, q_mam_);
         auto trip_on_the_next_day = 0U;
         for (auto const transport : transport_range) {
           auto const& transport_bitset =
@@ -524,14 +531,15 @@ private:
                 to_idx(q_day_ + day_offset - day_at_stop));
             auto const abs_dep_time = tt_.to_unixtime(
                 q_day_ + day_offset, minutes_after_midnight_t{mam_at_stop});
-            /*std::cout << "\tTransport " << transport << " with dep time "
-                      << abs_dep_time << " is " << is_active << '\n';*/
-            if (is_active && abs_dep_time < abs_ed_time &&
+            if (debug_ea) {
+              std::cout << "\t\t\tTransport " << transport << ", stop " << i
+                        << " with dep time " << abs_dep_time << " is "
+                        << is_active << '\n';
+            }
+            if (is_active && abs_dep_time < abs_max_ed_time &&
                 abs_dep_time >= abs_q_mam_) {
-              /*std::cout << "\tTransport " << transport << " with dep time "
-                        << abs_dep_time << " is " << is_active << '\n';*/
               ed_transport_idx = transport;
-              abs_ed_time = abs_dep_time;
+              abs_max_ed_time = abs_dep_time;
               if (day_offset > 0) {
                 trip_on_the_next_day = 1U;
               }
@@ -542,7 +550,7 @@ private:
         // If trip for this route was found
         if (ed_transport_idx != transport_idx_t::invalid()) {
           if (debug_ea) {
-            std::cout << "Start trip with abs dep time " << abs_ed_time
+            std::cout << "\t\tStart trip with abs dep time " << abs_max_ed_time
                       << ", on next day " << trip_on_the_next_day << '\n';
           }
           enqueue(r_idx, transport_idx_t{ed_transport_idx}, i, 0U, 0U, 0,
