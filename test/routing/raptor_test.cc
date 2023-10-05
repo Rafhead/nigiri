@@ -49,6 +49,7 @@ leg 2: (B, 0000002) [2020-03-30 06:45] -> (C, 0000003) [2020-03-30 07:45]
 leg 3: (C, 0000003) [2020-03-30 07:45] -> (C, 0000003) [2020-03-30 07:45]
   FOOTPATH (duration=0)
 
+
 )";
 
 unixtime_t parse_time(std::string_view s, char const* format) {

@@ -122,7 +122,8 @@ void reconstruct_journey(
           best.abs_time_on_target_,
           journey::run_enter_exit(
               {.t_ = seg_transport,
-               .stop_range_ = interval<stop_idx_t>{seg.from(), best.stop_idx_}},
+               .stop_range_ = interval<stop_idx_t>{0U, static_cast<stop_idx_t>(
+                                                           seg_stops.size())}},
               seg.from(), best.stop_idx_)});
       std::cout << "\tAdded transport " << tt.dbg(seg_transport.t_idx_)
                 << " from " << seg.from() << " ("
@@ -153,7 +154,7 @@ void reconstruct_journey(
         if (i == seg.prev_stop_idx()) {
           prev_to_l_idx = seg_stop.location_idx();
         }
-        if (i == seg.from()) {
+        if (i == prev_seg.from()) {
           prev_from_l_idx = seg_stop.location_idx();
         }
       }
@@ -182,6 +183,11 @@ void reconstruct_journey(
         j.add(journey::leg{
             direction::kForward, seg_from_l_idx, seg_from_l_idx, seg_arr_time,
             seg_arr_time + transfer_footpath.duration(), transfer_footpath});
+        std::cout << "\tAdded dummy footpath at "
+                  << tt.locations_.names_[seg_from_l_idx].view()
+                  << ", duration "
+                  << duration_t{tt.locations_.transfer_time_[seg_from_l_idx]}
+                  << '\n';
       } else {
         // Case stop from and stop to are different stops ==> count footpath
         // duration
@@ -198,8 +204,16 @@ void reconstruct_journey(
           journey::run_enter_exit(
               {.t_ = prev_seg_transport,
                .stop_range_ =
-                   interval<stop_idx_t>{prev_seg.from(), prev_seg.to()}},
-              prev_seg.from(), prev_seg.to())});
+                   interval<stop_idx_t>{
+                       0U, static_cast<stop_idx_t>(prev_seg_stops.size())}},
+              prev_seg.from(), seg.prev_stop_idx())});
+      std::cout << "\tAdded transport " << tt.dbg(prev_seg_transport.t_idx_)
+                << " from " << prev_seg.from() << " ("
+                << tt.locations_.names_[prev_from_l_idx].view() << ")"
+                << " to " << seg.prev_stop_idx() << " ("
+                << tt.locations_.names_[prev_to_l_idx].view() << ")"
+                << ", dep at a " << seg_dep_time_from << ", arr on b "
+                << seg_arr_time << '\n';
 
       // Set all for previous segment
       seg = prev_seg;
@@ -226,6 +240,7 @@ void reconstruct_journey(
                        seg_dep_time_from, seg_dep_time_from, first_footpath});*/
 
     std::reverse(begin(j.legs_), end(j.legs_));
+    j.print(std::cout, tt);
   }
 }
 }  // namespace nigiri::tripbased
