@@ -131,7 +131,7 @@ struct tripbased {
       if (debug_ea) {
         auto const stop_from = stop{seg_stops[seg_start_s_idx]};
         auto const stop_to = stop{seg_stops[seg_end_s_idx]};
-        std::cout << "Check segment " << curr_segment.t_idx() << ", trip "
+        std::cout << "Check segment " << seg_idx << ", trip "
                   << curr_segment.t_idx() << ", t_info "
                   << tt_.dbg(curr_segment.t_idx()) << " from "
                   << curr_segment.from() << "("
@@ -374,7 +374,7 @@ struct tripbased {
           // Take n_transfers from current segment to be able to count it
           auto const n_transfers = curr_segment.n_transfers() + 1U;
           // TODO: modify
-          if (n_transfers > 1) {
+          if (n_transfers > 2) {
             break;
           }
           if (n_transfers > max_transfers) {
@@ -531,6 +531,11 @@ private:
         // Will not allow trips that start later than 24 hours after query start
         auto abs_max_ed_time = tt_.to_unixtime(q_day_ + day_idx_t{1U}, q_mam_);
         auto trip_on_the_next_day = 0U;
+        if (debug_ea) {
+          std::cout << "\ttrip_on_next_day init = " << trip_on_the_next_day
+                    << '\n';
+          std::cout << "\tIterating through trips\n";
+        }
         for (auto const transport : transport_range) {
           auto const& transport_bitset =
               tt_.bitfields_[tt_.transport_traffic_days_[transport]];
@@ -538,26 +543,42 @@ private:
               tt_.event_mam(transport, i, event_type::kDep);
           // Check trips on the current day and day + 1
           // If footpath makes day change then only look at day + 1
-          trip_on_the_next_day = 0U;
+          // trip_on_the_next_day = 0U;
+          if (debug_ea) {
+            std::cout << "\tAnalyzing trip " << transport << '\n';
+          }
           for (auto day_offset = day_idx_t{day_change}; day_offset < 2;
                day_offset++) {
+            if (debug_ea) {
+              std::cout << "\t\tday_offset = " << day_offset << '\n';
+            }
             auto const is_active = transport_bitset.test(
                 to_idx(q_day_ + day_offset - day_at_stop));
             auto const abs_dep_time = tt_.to_unixtime(
                 q_day_ + day_offset, minutes_after_midnight_t{mam_at_stop});
             if (debug_ea) {
-              std::cout << "\tTrip " << transport << ", t_info "
+              std::cout << "\t\tTrip " << transport << ", t_info "
                         << tt_.dbg(transport) << ", stop " << i << ", loc "
                         << tt_.locations_.names_[r_stop.location_idx()].view()
                         << ", dep time " << abs_dep_time << " is " << is_active
                         << '\n';
+              std::cout << "\t\tabs_dep_time =" << abs_dep_time
+                        << ", abs_q_mam =" << abs_q_mam_
+                        << ", abs_max_ed_time =" << abs_max_ed_time << '\n';
             }
             if (is_active && abs_dep_time < abs_max_ed_time &&
                 abs_dep_time >= abs_q_mam_) {
+              if (debug_ea) {
+                std::cout << "\t\t\tTrip " << transport << " is better than "
+                          << ed_transport_idx << ": " << abs_dep_time << " vs. "
+                          << abs_max_ed_time << '\n';
+              }
               ed_transport_idx = transport;
               abs_max_ed_time = abs_dep_time;
               if (day_offset > 0) {
                 trip_on_the_next_day = 1U;
+              } else {
+                trip_on_the_next_day = 0U;
               }
             }
           }
