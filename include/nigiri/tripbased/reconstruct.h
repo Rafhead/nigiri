@@ -45,17 +45,24 @@ void reconstruct_journey(
       auto const seg_stop = stop{s};
       if (i == best.stop_idx_) {
         seg_l_idx = seg_stop.location_idx();
+        std::cout << "Found best's stop on index " << i << ", loc "
+                  << tt.locations_.names_[seg_l_idx].view() << '\n';
       }
       if (i == seg.from()) {
         seg_from_l_idx = seg_stop.location_idx();
+        std::cout << "Found from stop on index " << i << ", loc "
+                  << tt.locations_.names_[seg_from_l_idx].view() << '\n';
       }
     }
 
     // transport day as: day + on query day - days in trip since from stop
     auto seg_transport = nigiri::transport{
         .t_idx_ = seg.t_idx(),
-        .day_ = q_day + !seg.on_query_day() -
-                tt.event_mam(seg.t_idx(), seg.from(), event_type::kDep).days()};
+        .day_ = day_idx_t{
+            q_day + !seg.on_query_day() -
+            tt.event_mam(seg.t_idx(), seg.from(), event_type::kDep).days()}};
+    std::cout << "Query day " << q_day << ", seg day " << seg_transport.day_
+              << '\n';
     auto seg_dep_time_from =
         tt.event_time(seg_transport, seg.from(), event_type::kDep);
     std::cout << "Time on dest " << best.abs_time_on_target_ << '\n';
@@ -76,36 +83,57 @@ void reconstruct_journey(
 
     // Segment doesn't visit target directly
     if (footpath_dur != duration_t{0U}) {
-      std::cout << "Footpath needed\n";
+      std::cout << "Footpath to target needed\n";
       auto const footpath_to_target = footpath(target_l_idx, footpath_dur);
       // Add firstly footpath to target...
       j.add(journey::leg{direction::kForward, seg_l_idx, target_l_idx,
                          best.abs_time_on_target_ - footpath_dur,
                          best.abs_time_on_target_, footpath_to_target});
+      std::cout << "\tAdded footpath from "
+                << tt.locations_.names_[seg_l_idx].view() << " to "
+                << tt.locations_.names_[target_l_idx].view()
+                << ", times: " << best.abs_time_on_target_ - footpath_dur
+                << " and " << best.abs_time_on_target_ << '\n';
       // ... then the segment itself
       j.add(journey::leg{
           direction::kForward, seg_from_l_idx, seg_l_idx, seg_dep_time_from,
           best.abs_time_on_target_ - footpath_dur,
           journey::run_enter_exit(
               {.t_ = seg_transport,
-               .stop_range_ = interval<stop_idx_t>{seg.from(), seg.to()}},
-              seg.from(), seg.to())});
+               .stop_range_ = interval<stop_idx_t>{seg.from(), best.stop_idx_}},
+              seg.from(), best.stop_idx_)});
+      std::cout << "\tAdded transport " << tt.dbg(seg_transport.t_idx_)
+                << " from " << seg.from() << " to " << best.stop_idx_
+                << ", dep at a " << seg_dep_time_from << ", arr on b "
+                << best.abs_time_on_target_ - footpath_dur << '\n';
     } else {
       // Else segment visits one of the targets directly --> add segment
-      std::cout << "Added directly\n";
+      std::cout << "Added directly to target - no footpath needed\n";
       auto const footpath_to_target = footpath(target_l_idx, duration_t{0U});
       // Add firstly footpath to target...
       j.add(journey::leg{direction::kForward, target_l_idx, target_l_idx,
                          best.abs_time_on_target_, best.abs_time_on_target_,
                          footpath_to_target});
+      std::cout << "\tFootpath null to "
+                << tt.locations_.names_[target_l_idx].view() << ", time "
+                << best.abs_time_on_target_ << '\n';
       j.add(journey::leg{
           direction::kForward, seg_from_l_idx, seg_l_idx, seg_dep_time_from,
           best.abs_time_on_target_,
           journey::run_enter_exit(
               {.t_ = seg_transport,
-               .stop_range_ = interval<stop_idx_t>{seg.from(), seg.to()}},
-              seg.from(), seg.to())});
+               .stop_range_ = interval<stop_idx_t>{seg.from(), best.stop_idx_}},
+              seg.from(), best.stop_idx_)});
+      std::cout << "\tAdded transport " << tt.dbg(seg_transport.t_idx_)
+                << " from " << seg.from() << " ("
+                << tt.locations_.names_[seg_from_l_idx].view() << ")"
+                << " to " << best.stop_idx_ << " ("
+                << tt.locations_.names_[seg_l_idx].view() << ")"
+                << ", dep at a " << seg_dep_time_from << ", arr on b "
+                << best.abs_time_on_target_ << '\n';
     }
+
+    std::cout << "Prev stop idx = " << seg.prev_stop_idx() << '\n';
 
     // Recursively construct legs by looking on prev segment_idx
     // tt + transport struct gives unix time
@@ -193,6 +221,9 @@ void reconstruct_journey(
 
     // TODO: Ensure start footpath added properly - count case when start is
     // reachable via footpath
+    /*auto const first_footpath = footpath(seg_from_l_idx, duration_t{0U});
+    j.add(journey::leg{direction::kForward, seg_from_l_idx, seg_from_l_idx,
+                       seg_dep_time_from, seg_dep_time_from, first_footpath});*/
 
     std::reverse(begin(j.legs_), end(j.legs_));
   }
