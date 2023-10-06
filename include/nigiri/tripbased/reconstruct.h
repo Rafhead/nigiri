@@ -192,8 +192,21 @@ void reconstruct_journey(
         // Case stop from and stop to are different stops ==> count footpath
         // duration
         // TODO count footpath duration
+        for (auto f : tt.locations_.footpaths_out_[prev_to_l_idx]) {
+          if (f.target() == seg_from_l_idx) {
+            transfer_footpath = f;
+            std::cout << "\tTransfer footpath found from "
+                      << tt.locations_.names_[prev_to_l_idx].view() << " to "
+                      << tt.locations_.names_[seg_from_l_idx].view() << '\n';
+            break;
+          }
+        }
+        std::cout << "\tAdded footpath from "
+                  << tt.locations_.names_[prev_to_l_idx].view() << " to "
+                  << tt.locations_.names_[seg_from_l_idx].view()
+                  << ", dur = " << transfer_footpath.duration() << '\n';
         j.add(journey::leg{
-            direction::kForward, prev_to_l_idx, seg_l_idx, seg_arr_time,
+            direction::kForward, prev_to_l_idx, seg_from_l_idx, seg_arr_time,
             seg_arr_time + transfer_footpath.duration(), transfer_footpath});
       }
 
@@ -224,7 +237,7 @@ void reconstruct_journey(
       for (auto [i, s] : utl::enumerate(seg_stops)) {
         auto const seg_stop = stop{s};
         if (i == seg.from()) {
-          seg_l_idx = seg_stop.location_idx();
+          seg_from_l_idx = seg_stop.location_idx();
         }
       }
       seg_transport = prev_seg_transport;
